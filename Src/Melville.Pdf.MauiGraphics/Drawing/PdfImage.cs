@@ -72,7 +72,11 @@ public sealed class PdfImage
                 var o = (y * width + x) * 4;
                 if (!bilinear)
                 {
-                    var i = (Math.Clamp((int)Math.Round(sy), 0, sh - 1) * sw + Math.Clamp((int)Math.Round(sx), 0, sw - 1)) * 4;
+                    // Nearest source pixel to the output pixel's centre. (Taking the floor, as Skia's own nearest
+                    // sampling does, measured worse: the canvas samples this image again when drawing it.)
+                    int nx = Math.Clamp((int)Math.Round(sx), 0, sw - 1);
+                    int ny = Math.Clamp((int)Math.Round(sy), 0, sh - 1);
+                    var i = (ny * sw + nx) * 4;
                     result[o] = source[i]; result[o + 1] = source[i + 1]; result[o + 2] = source[i + 2]; result[o + 3] = source[i + 3];
                     continue;
                 }

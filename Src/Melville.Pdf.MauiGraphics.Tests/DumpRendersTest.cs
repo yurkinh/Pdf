@@ -27,6 +27,9 @@ public class DumpRendersTest(ITestOutputHelper output)
         }
     }
 
+    /// <summary>Write two renders side by side, with the difference panel.</summary>
+    public static void WritePair(string path, Raster left, Raster right) => WriteSideBySide(path, left, right);
+
     private static unsafe void WriteSideBySide(string path, Raster left, Raster right)
     {
         using var bitmap = new SKBitmap(left.Width * 3 + 16, left.Height);

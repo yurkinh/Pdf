@@ -82,6 +82,8 @@ Speed (net10.0, 1024 px, this Mac), recording a page vs a full SkiaSharp render:
 
 ## Other findings
 
+- **Concurrent JPEG decodes corrupted each other** (fixed in phase 4). `JpegStreamFactory` returned its pooled output buffer to `ArrayPool<byte>.Shared` while the decoded stream still read it, and the stream returned it again on dispose. The stream also read past the decoded length into stale pool data. Twelve concurrent renders of one JPEG gave about 90 different outputs, with wrong colours, in **both** renderers, and the shared pool spread the damage to unrelated code (a CMap document failed once). Introduced upstream on 2026-10-12. Fixed, with a regression test, on local branch `fix/jpeg-pooled-buffer-ownership` (not yet proposed upstream).
+
 - **Encrypted reference documents** fail to read back 0.3–1.3% of the time (random keys; `PdfParseException: Unknown token` or a PostScript stack overflow in the encryption dictionary): `-EncryptedV6` 4/300, `-EncryptedV1Rc4` 2/300, three others 1/300. This is an upstream writer or parser bug and is likely to affect real encrypted PDFs written by Melville. The renderer tests regenerate such documents up to 3 times.
 
 - Opening a second `PdfReader` document over the **same** `IMultiplexSource` while the first is still open fails for `-StandardFonts` (`PdfParseException: Unknown token: f`). This happens on every runtime. The benchmarks use a separate copy per open; still to investigate.

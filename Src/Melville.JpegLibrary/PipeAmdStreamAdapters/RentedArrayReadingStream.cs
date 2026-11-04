@@ -8,6 +8,7 @@ namespace Melville.JpegLibrary.PipeAmdStreamAdapters;
 internal abstract class RentedArrayReadingStream : DefaultBaseStream, ISequenceSource
 {
     private readonly byte[] data;
+    private bool returned;
     private int length;
     private int position;
     public RentedArrayReadingStream(byte[] data, int length) : base(true, false, false)
@@ -21,7 +22,8 @@ internal abstract class RentedArrayReadingStream : DefaultBaseStream, ISequenceS
 
     public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = new CancellationToken())
     {
-        var ret = CopyBytes(data.AsSpan(position), buffer.Span);
+        // The rented array can be longer than the data: read only the first `length` bytes.
+        var ret = CopyBytes(data.AsSpan(position, length - position), buffer.Span);
         position += ret;
         return new(ret);
     }
@@ -30,8 +32,10 @@ internal abstract class RentedArrayReadingStream : DefaultBaseStream, ISequenceS
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // Stream.Dispose can run more than once; returning the array twice would give it to two renters.
+        if (disposing && !returned)
         {
+            returned = true;
             ArrayPool<byte>.Shared.Return(data);
         }
     }
