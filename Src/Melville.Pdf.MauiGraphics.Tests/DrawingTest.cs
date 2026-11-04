@@ -10,12 +10,8 @@ public class DashPatternTest
 {
     [Fact]
     public void PatternsAreInMultiplesOfTheStrokeWidth() =>
-        MauiCanvasAdapter.DashPatternFor([10, 5], 5, DashBehavior.Exact).Should().Equal(2, 1);
-
-    [Fact]
-    public void NativeBackendsGetOneWidthAddedToEachDash() =>
-        // CoreGraphics and Android draw dashes one width short (phase 1 spike), gaps as given.
-        MauiCanvasAdapter.DashPatternFor([10, 5, 20, 5], 5, DashBehavior.NativeShortened).Should().Equal(3, 1, 5, 1);
+        // Every backend measured (Skia, CoreGraphics, Android) draws dashes exactly this long.
+        MauiCanvasAdapter.DashPatternFor([10, 5, 20, 5], 5).Should().Equal(2, 1, 4, 1);
 
     [Fact]
     public void ZeroPhaseKeepsThePattern() =>

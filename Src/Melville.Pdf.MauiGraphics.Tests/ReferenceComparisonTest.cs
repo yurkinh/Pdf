@@ -34,13 +34,31 @@ public class ReferenceComparisonTest(ITestOutputHelper output)
     public async Task MatchesTheSkiaSharpRenderer(string prefix)
     {
         var generator = GeneratorFactory.AllGenerators.Single(g => g.Prefix == prefix);
-        var (difference, _, _) = await Renders.CompareAsync(generator, Width);
+        var difference = await CompareWithRetryForEncryptedAsync(generator);
         if (KnownReferenceErrors.TryGetValue(prefix, out var reason))
         {
             Assert.True(difference > 0.001, $"{prefix} now matches the reference; remove it from the known list ({reason})");
             return;
         }
         Assert.True(difference <= Tolerance, $"{prefix}: {difference:P2} of pixels differ (tolerance {Tolerance:P0})");
+    }
+
+    // Upstream issue, not the renderer: encrypted reference documents use random keys, and about 0.3-1.3% of them
+    // cannot be read back (PdfParseException "Unknown token" or a PostScript stack overflow while parsing the
+    // encryption dictionary). Regenerate those few; any other failure, or a renderer exception, still fails.
+    private static async Task<double> CompareWithRetryForEncryptedAsync(IPdfGenerator generator)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return (await Renders.CompareAsync(generator, Width)).Fraction;
+            }
+            catch (Exception e) when (attempt < 3 && generator.Prefix.StartsWith("-Encrypted") &&
+                                      e.GetType().Name is "PdfParseException" or "PostscriptNamedErrorException")
+            {
+            }
+        }
     }
 
     [Fact(Explicit = true)]

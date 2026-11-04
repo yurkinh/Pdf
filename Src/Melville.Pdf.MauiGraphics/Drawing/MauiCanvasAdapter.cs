@@ -3,32 +3,15 @@ using Microsoft.Maui.Graphics;
 
 namespace Melville.Pdf.MauiGraphics.Drawing;
 
-/// <summary>How a backend draws dash patterns given in multiples of the stroke width.</summary>
-public enum DashBehavior
-{
-    /// <summary>Dash d, gap g are drawn d × width and g × width long (Skia).</summary>
-    Exact,
-
-    /// <summary>
-    /// Dashes come out one stroke width short: (d − 1) × width, gaps g × width
-    /// (CoreGraphics and Android in Maui.Graphics 10, measured in the phase 1 spike).
-    /// </summary>
-    NativeShortened,
-}
-
 /// <summary>
 /// The differences between Maui.Graphics backends that the PDF renderer has to compensate for.
 /// </summary>
 /// <param name="Concatenate">Applies a transform in user space. Defaults to ICanvas.ConcatenateTransform,
 /// which is wrong on Android and throws in Maui.Graphics.Skia 10.0.x; those hosts pass a working one.</param>
-/// <param name="Dashes">How the backend scales dash patterns.</param>
-public sealed record CanvasQuirks(Action<ICanvas, Matrix3x2> Concatenate, DashBehavior Dashes)
+public sealed record CanvasQuirks(Action<ICanvas, Matrix3x2> Concatenate)
 {
-    /// <summary>A backend whose ConcatenateTransform and dashes behave as documented.</summary>
-    public static CanvasQuirks Default { get; } = new((c, m) => c.ConcatenateTransform(m), DashBehavior.Exact);
-
-    /// <summary>CoreGraphics (iOS, Mac Catalyst): correct transforms, shortened dashes.</summary>
-    public static CanvasQuirks Apple { get; } = Default with { Dashes = DashBehavior.NativeShortened };
+    /// <summary>A backend whose ConcatenateTransform behaves as documented (CoreGraphics).</summary>
+    public static CanvasQuirks Default { get; } = new((c, m) => c.ConcatenateTransform(m));
 }
 
 /// <summary>
@@ -155,7 +138,7 @@ public sealed class MauiCanvasAdapter : IPdfCanvas
         // Maui.Graphics 10 ignores StrokeDashOffset on Skia, so the phase is applied to the pattern instead.
         canvas.StrokeDashOffset = 0;
         canvas.StrokeDashPattern = stroke.Dashes is { Length: > 0 } dashes && stroke.Width > 0
-            ? DashPatternFor(StartAtPhase(dashes, stroke.DashPhase), stroke.Width, quirks.Dashes)
+            ? DashPatternFor(StartAtPhase(dashes, stroke.DashPhase), stroke.Width)
             : null;
         canvas.DrawPath(path);
     }
@@ -164,16 +147,8 @@ public sealed class MauiCanvasAdapter : IPdfCanvas
     /// Maui.Graphics dash patterns are in multiples of the stroke width; PDF dashes are lengths.
     /// Even entries are dashes, odd entries gaps.
     /// </summary>
-    public static float[] DashPatternFor(float[] dashes, float width, DashBehavior behavior)
-    {
-        var pattern = new float[dashes.Length];
-        for (int i = 0; i < dashes.Length; i++)
-        {
-            pattern[i] = dashes[i] / width;
-            if (behavior == DashBehavior.NativeShortened && i % 2 == 0) pattern[i] += 1;
-        }
-        return pattern;
-    }
+    public static float[] DashPatternFor(float[] dashes, float width) =>
+        dashes.Select(d => d / width).ToArray();
 
     /// <summary>
     /// The dash pattern that starts <paramref name="phase"/> into <paramref name="dashes"/> (an even-length

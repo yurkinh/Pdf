@@ -33,3 +33,26 @@ public class RecordTimingTest
         await File.AppendAllTextAsync(Path.Combine(folder, "timing.txt"), lines, TestContext.Current.CancellationToken);
     }
 }
+
+public class EncryptedGeneratorStabilityTest
+{
+    /// <summary>Generate and open each encrypted reference document many times; writes failure counts.</summary>
+    [Fact(Explicit = true)]
+    public async Task OpenEncryptedDocumentsRepeatedly()
+    {
+        var folder = Environment.GetEnvironmentVariable("MELVILLE_DUMP_DIR") ?? Path.GetTempPath();
+        var lines = new List<string>();
+        foreach (var generator in GeneratorFactory.AllGenerators.Where(g => g.Prefix.StartsWith("-Encrypted")).OrderBy(g => g.Prefix))
+        {
+            int failures = 0;
+            string? sample = null;
+            for (int i = 0; i < 300; i++)
+            {
+                try { using var _ = await Renders.OpenAsync(generator); }
+                catch (Exception e) { failures++; sample ??= e.GetType().Name + ": " + e.Message[..Math.Min(40, e.Message.Length)]; }
+            }
+            lines.Add($"{generator.Prefix}\t{failures}/300\t{sample}");
+        }
+        await File.WriteAllLinesAsync(Path.Combine(folder, "encrypted.txt"), lines, TestContext.Current.CancellationToken);
+    }
+}

@@ -96,6 +96,32 @@ public static class CanvasChecks
             });
         }
 
+        // Phase 3 follow-up: does the native shortening depend on DrawLine vs DrawPath, or on the transform?
+        foreach (var (label, usePath, scale) in new[] { ("DrawLine", false, 1f), ("DrawPath", true, 1f), ("DrawPath, scale 2", true, 2f) })
+        {
+            Check($"Dash [5,5] at StrokeSize 4, {label}: dash, gap (device px) [pattern x size x scale = {20 * scale}]", () =>
+            {
+                var p = r.Render(400, 40, c =>
+                {
+                    if (scale != 1) concat(c, Matrix3x2.CreateScale(scale));
+                    c.StrokeColor = Colors.Black;
+                    c.StrokeSize = 4;
+                    c.StrokeLineCap = LineCap.Butt;
+                    c.StrokeDashPattern = [5, 5];
+                    if (usePath)
+                    {
+                        var line = new PathF();
+                        line.MoveTo(0, 10);
+                        line.LineTo(400 / scale, 10);
+                        c.DrawPath(line);
+                    }
+                    else c.DrawLine(0, 10, 400, 10);
+                });
+                var runs = DarkRuns(p, y: (int)(10 * scale));
+                return "runs (dash, gap, dash, gap, dash): " + string.Join(", ", runs.Take(5));
+            });
+        }
+
         foreach (var mode in new[] { WindingMode.NonZero, WindingMode.EvenOdd })
         {
             Check($"FillPath {mode}: hole / ring", () =>
@@ -232,6 +258,22 @@ public static class CanvasChecks
                 maxX = Math.Max(maxX, x); maxY = Math.Max(maxY, y);
             }
         return maxX < 0 ? "nothing filled" : $"({minX},{minY})-({maxX},{maxY})";
+    }
+
+    /// <summary>Lengths of alternating dark and light runs along a row, starting with the first dark pixel.</summary>
+    private static List<int> DarkRuns(Pixels p, int y)
+    {
+        var runs = new List<int>();
+        int x = 0;
+        while (x < p.Width && p.At(x, y).R > 128) x++;
+        while (x < p.Width)
+        {
+            var dark = p.At(x, y).R <= 128;
+            int start = x;
+            while (x < p.Width && (p.At(x, y).R <= 128) == dark) x++;
+            runs.Add(x - start);
+        }
+        return runs;
     }
 
     private static (int Dash, int Gap) FirstDashAndGap(Pixels p, int y)

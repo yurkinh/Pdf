@@ -35,6 +35,7 @@ public sealed class SpikeViewModel : INotifyPropertyChanged
             var (core, png) = await Task.Run(SpikeRunner.RunCoreChecksAsync);
             foreach (var line in core) Results.Add(line);
             if (png is not null) Preview = ImageSource.FromStream(() => new MemoryStream(png));
+            foreach (var line in await Task.Run(FidelityRunner.RunAsync)) Results.Add(line);
         }
         finally
         {
