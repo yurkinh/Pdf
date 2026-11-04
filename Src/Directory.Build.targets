@@ -1,0 +1,7 @@
+<Project>
+    <!-- Evaluated after each project file, so the shared library TFM list identifies the cross-platform libraries.
+         These ship to iOS/Android through the MAUI viewer, so run the trim/AOT analyzers on them. -->
+    <PropertyGroup Condition="'$(TargetFrameworks)' == '$(MelvilleLibraryTfms)' And '$(IsTestProject)' != 'true'">
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+</Project>

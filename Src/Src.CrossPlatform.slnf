@@ -1,0 +1,34 @@
+{
+  "solution": {
+    "path": "Src.sln",
+    "projects": [
+      "DisposeCheck\\DisposeCheck.csproj",
+      "Melville.ArchitectureAnalyzer.Test\\Melville.ArchitectureAnalyzer.Test.csproj",
+      "Melville.AsyncAnalyzer\\Melville.AsyncAnalyzer.csproj",
+      "Melville.AsyncCodeFix\\Melville.AsyncCodeFix.csproj",
+      "Melville.CCITT\\Melville.CCITT.csproj",
+      "Melville.CSJ2k\\Melville.CSJ2K.csproj",
+      "Melville.Fonts.TableGenerator\\Melville.Fonts.TableGenerator.csproj",
+      "Melville.Fonts\\Melville.Fonts.csproj",
+      "Melville.Icc\\Melville.Icc.csproj",
+      "Melville.JBig2\\Melville.JBig2.csproj",
+      "Melville.JpegLibrary\\Melville.JpegLibrary.csproj",
+      "Melville.Parsing\\Melville.Parsing.csproj",
+      "Melville.Pdf.DataModelTests\\Melville.Pdf.DataModelTests.csproj",
+      "Melville.Pdf.FontLibrary.Cjk\\Melville.Pdf.FontLibrary.Cjk.csproj",
+      "Melville.Pdf.FontLibrary\\Melville.Pdf.FontLibrary.csproj",
+      "Melville.Pdf.FormReader\\Melville.Pdf.FormReader.csproj",
+      "Melville.Pdf.ImageExtractor\\Melville.Pdf.ImageExtractor.csproj",
+      "Melville.Pdf.LowLevel\\Melville.Pdf.LowLevel.csproj",
+      "Melville.Pdf.Model\\Melville.Pdf.Model.csproj",
+      "Melville.Pdf.ReferenceDocumentGenerator\\Melville.Pdf.ReferenceDocumentGenerator.csproj",
+      "Melville.Pdf.ReferenceDocuments\\Melville.Pdf.ReferenceDocuments.csproj",
+      "Melville.Pdf.SkiaSharp\\Melville.Pdf.SkiaSharp.csproj",
+      "Melville.Pdf.TextExtractor\\Melville.Pdf.TextExtractor.csproj",
+      "Melville.Postscript.Interpreter\\Melville.Postscript.Interpreter.csproj",
+      "Melville.Postscript.OperationGenerator\\Melville.Postscript.OperationGenerator.csproj",
+      "Pdf.KnownNamesGenerator\\Pdf.KnownNamesGenerator.csproj",
+      "TimeTrial\\TimeTrial.csproj"
+    ]
+  }
+}

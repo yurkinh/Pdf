@@ -1,0 +1,18 @@
+diff --git a/Src/Melville.StreamInterfaces/Files/FileIStreamFactory.cs b/Src/Melville.StreamInterfaces/Files/FileIStreamFactory.cs
+index 66bb62f..b7cff8b 100644
+--- a/Src/Melville.StreamInterfaces/Files/FileIStreamFactory.cs
++++ b/Src/Melville.StreamInterfaces/Files/FileIStreamFactory.cs
+@@ -65,6 +65,7 @@ public static class FileIStreamFactory
+         }
+     }
+ 
++#if NET11_0_OR_GREATER // SafeFileHandle.CreateAnonymousPipe is new in .NET 11
+     /// <summary>
+     /// Create an anonymous pipe with associated reader and writer.
+     /// </summary>
+@@ -101,4 +102,5 @@ public static class FileIStreamFactory
+             Reader.Dispose();
+         }
+     }
++#endif
+ }

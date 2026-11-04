@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         
-        <TargetFramework>net11.0</TargetFramework>
+        <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Nullable>disable</Nullable>
 

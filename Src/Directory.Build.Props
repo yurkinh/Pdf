@@ -9,6 +9,12 @@
         <AnalysisLevel>latest</AnalysisLevel>
         <RepositoryUrl>https://github.com/DrJohnMelville/Pdf</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <!-- Cross-platform libraries ship both runtimes; apps, tools and Windows projects keep their own TFM -->
+        <MelvilleLibraryTfms>net10.0;net11.0</MelvilleLibraryTfms>
+    </PropertyGroup>
+
+    <!-- Runtime async needs .NET 11 runtime support; net10.0 keeps compiler-generated state machines -->
+    <PropertyGroup Condition="$(TargetFramework.StartsWith('net11.0'))">
 		<Features>$(Features);runtime-async=on</Features>
     </PropertyGroup>
 

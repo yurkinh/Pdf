@@ -1,0 +1,32 @@
+diff --git a/Src/Directory.Build.Props b/Src/Directory.Build.Props
+index e81389d..7ccab20 100644
+--- a/Src/Directory.Build.Props
++++ b/Src/Directory.Build.Props
+@@ -1,6 +1,10 @@
+ ﻿<Project>
+     <PropertyGroup>
+-        <TargetFramework>net11.0</TargetFramework>
++        <!-- Libraries ship both runtimes. The source generator stays netstandard2.0 (set in its csproj).
++             Test projects stay net11.0: IntersectionTypes output uses System.Runtime.CompilerServices.UnionAttribute (.NET 11). -->
++        <MelvilleTfms>net10.0;net11.0</MelvilleTfms>
++        <MelvilleTfms Condition="'$(MSBuildProjectName)' == 'IntegrationTesting' or '$(MSBuildProjectName)' == 'GeneratorTest'">net11.0</MelvilleTfms>
++        <TargetFrameworks Condition="'$(MSBuildProjectName)' != 'Melville.IntersectionTypes'">$(MelvilleTfms)</TargetFrameworks>
+         <Version>0.1.1-preview</Version>
+         <LangVersion>preview</LangVersion>
+         <Authors>John Melville, MS, MD</Authors>
+@@ -11,10 +15,14 @@
+         <RepositoryUrl>https://github.com/DrJohnMelville/Melville.Streams</RepositoryUrl>
+         <PackageLicenseExpression>MIT</PackageLicenseExpression>
+ 		<NoWarn>NU1701;CRR0029</NoWarn>
++	</PropertyGroup>
++
++	<!-- Runtime async needs .NET 11 runtime support; net10.0 keeps compiler-generated state machines -->
++	<PropertyGroup Condition="'$(TargetFramework)' == 'net11.0'">
+ 		<Features>$(Features);runtime-async=on</Features>
+ 	</PropertyGroup>
+ 
+-	<Target Name="CopyPackage" AfterTargets="Pack">
++	<Target Name="CopyPackage" AfterTargets="Pack" Condition="'$(MelvilleSkipCopyPackage)' != 'true'">
+ 		<Copy SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg"
+ 		      DestinationFolder="$(SolutionDir)..\..\TempNuget\" />
+ 	</Target>

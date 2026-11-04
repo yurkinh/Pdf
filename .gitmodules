@@ -1,0 +1,3 @@
+[submodule "external/Melville.Streams"]
+	path = external/Melville.Streams
+	url = https://github.com/DrJohnMelville/Melville.Streams.git

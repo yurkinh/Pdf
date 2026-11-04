@@ -1,0 +1,20 @@
+diff --git a/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs b/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs
+index fc30e30..b6ec356 100644
+--- a/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs
++++ b/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs
+@@ -34,11 +34,12 @@ internal class MemberForwarder(
+         int startIndex = 0;
+         while (startIndex < comment.Length)
+         {
+-            var endIndex = comment.IndexOf('\r', startIndex);
+-            if (endIndex < 0) endIndex = comment.Length - startIndex;
+-            if (endIndex + 1 < comment.Length && comment[endIndex + 1] == '\n') endIndex++;
++            // Split on '\n' so both LF and CRLF line endings work (a CRLF line keeps its '\r').
++            var endIndex = comment.IndexOf('\n', startIndex);
++            if (endIndex < 0) endIndex = comment.Length - 1;
+             sb.Append("    ///");
+             sb.Append(comment, startIndex, 1 + endIndex - startIndex);
++            if (comment[endIndex] != '\n') sb.AppendLine();
+             startIndex = endIndex + 1;
+         }
+     }
