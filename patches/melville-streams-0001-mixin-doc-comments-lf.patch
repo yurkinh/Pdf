@@ -1,3 +1,43 @@
+diff --git a/Src/GeneratorTest/MixinTypes/MixinGeneratorTest.cs b/Src/GeneratorTest/MixinTypes/MixinGeneratorTest.cs
+index 5e29b6e..7172062 100644
+--- a/Src/GeneratorTest/MixinTypes/MixinGeneratorTest.cs
++++ b/Src/GeneratorTest/MixinTypes/MixinGeneratorTest.cs
+@@ -49,8 +49,7 @@ internal class MixinGeneratorTest
+         }
+         """);
+ 
+-    [Test]
+-    public Task CopyDocComment() => SuccessText("""
++    private const string DocCommentSource = """
+         using Melville.IntersectionTypes;
+ 
+         public readonly struct Mix{
+@@ -62,6 +61,24 @@ internal class MixinGeneratorTest
+ 
+         public partial class Test: Melville.IntersectionTypes.IMixin<Mix> {
+         }
+-        """);
++        """;
++
++    [Test]
++    public Task CopyDocComment() => SuccessText(DocCommentSource);
++
++    // Roslyn builds documentation XML with the OS newline ('\n' off Windows), whatever the source uses,
++    // so cover both source line endings and check the copied comment with line endings normalized.
++    [Test]
++    [Arguments("\n")]
++    [Arguments("\r\n")]
++    public void CopyDocCommentWithLineEndings(string newLine)
++    {
++        var tb = new GeneratorTestBed(new MixinGenerator(), DocCommentSource.ReplaceLineEndings(newLine));
++        tb.AssertNoDiagnostics();
++
++        var text = tb.FromName("Test_Mix.g.cs").Text().ReplaceLineEndings("\n");
++        text.Should().Contain("    ///      This is a Doc Comment!\n");
++        text.Should().Contain("    ///</member>\n    public float Method(");
++    }
+ 
+ }
 diff --git a/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs b/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs
 index fc30e30..b6ec356 100644
 --- a/Src/Melville.IntersectionTypes/CodeGen/MemberForwarder.cs
