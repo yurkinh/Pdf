@@ -50,3 +50,11 @@ jobs:
         # 43 known failures on LF checkouts (tests hard-code CRLF); non-blocking on macOS until fixed.
         continue-on-error: ${{ runner.os == 'macOS' }}
         run: dotnet test --project Melville.Pdf.DataModelTests/Melville.Pdf.DataModelTests.csproj -c Release --no-build -f net11.0
+
+      # New projects are not in upstream's Src.sln (kept unmodified), so they build on their own.
+      - name: Viewer model tests (net10.0 and net11.0)
+        working-directory: Src
+        run: |
+          dotnet build Melville.Pdf.ViewerModel.Tests/Melville.Pdf.ViewerModel.Tests.csproj -c Release
+          dotnet test --project Melville.Pdf.ViewerModel.Tests/Melville.Pdf.ViewerModel.Tests.csproj -c Release --no-build -f net10.0
+          dotnet test --project Melville.Pdf.ViewerModel.Tests/Melville.Pdf.ViewerModel.Tests.csproj -c Release --no-build -f net11.0

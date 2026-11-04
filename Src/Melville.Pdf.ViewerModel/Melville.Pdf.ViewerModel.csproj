@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Title>Melville.Pdf.ViewerModel</Title>
+        <PackageDescription>UI-independent view models for PDF viewer controls: page selection, page rendering
+        with cancellation, zoom and fit layout, and optional content (layers).</PackageDescription>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Melville.Pdf.Model\Melville.Pdf.Model.csproj" />
+    </ItemGroup>
+
+</Project>
