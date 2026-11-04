@@ -13,8 +13,9 @@
         <MelvilleLibraryTfms>net10.0;net11.0</MelvilleLibraryTfms>
     </PropertyGroup>
 
-    <!-- Runtime async needs .NET 11 runtime support; net10.0 keeps compiler-generated state machines -->
-    <PropertyGroup Condition="$(TargetFramework.StartsWith('net11.0'))">
+    <!-- Runtime async needs .NET 11 runtime support; net10.0 keeps compiler-generated state machines.
+         -p:MelvilleRuntimeAsync=false turns it off on net11.0 too (benchmarks, mobile runtime fallback). -->
+    <PropertyGroup Condition="$(TargetFramework.StartsWith('net11.0')) And '$(MelvilleRuntimeAsync)' != 'false'">
 		<Features>$(Features);runtime-async=on</Features>
     </PropertyGroup>
 

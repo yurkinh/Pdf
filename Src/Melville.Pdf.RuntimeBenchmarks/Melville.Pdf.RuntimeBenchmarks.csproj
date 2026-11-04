@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Melville.Pdf.FontLibrary\Melville.Pdf.FontLibrary.csproj" />
+        <ProjectReference Include="..\Melville.Pdf.ReferenceDocuments\Melville.Pdf.ReferenceDocuments.csproj" />
+        <ProjectReference Include="..\Melville.Pdf.SkiaSharp\Melville.Pdf.SkiaSharp.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="BenchmarkDotNet" />
+    </ItemGroup>
+
+</Project>
