@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Title>Melville.Pdf.MauiGraphics</Title>
+        <PackageDescription>Render PDF pages with Microsoft.Maui.Graphics: pages are recorded into a display list
+        off the UI thread and replayed onto any ICanvas.</PackageDescription>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Melville.Pdf.Model\Melville.Pdf.Model.csproj" />
+        <ProjectReference Include="..\Melville.Pdf.ViewerModel\Melville.Pdf.ViewerModel.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Maui.Graphics" />
+    </ItemGroup>
+
+</Project>

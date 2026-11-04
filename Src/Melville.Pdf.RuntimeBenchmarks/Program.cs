@@ -19,5 +19,14 @@ var config = DefaultConfig.Instance
     .AddJob(baseJob.WithRuntime(net11).WithId("net11.0-no-runtime-async")
         .WithArguments([new MsBuildArgument("/p:MelvilleRuntimeAsync=false")]));
 
+// RendererBenchmarks compares renderers, not runtimes: --renderers runs it on net10.0 alone.
+if (args.Contains("--renderers"))
+{
+    BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(
+        args.Where(a => a != "--renderers").ToArray(),
+        DefaultConfig.Instance.AddJob(baseJob.WithRuntime(CoreRuntime.Core10_0).WithId("net10.0")));
+    return;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Melville.Pdf.RuntimeBenchmarks.RenderBenchmarks).Assembly)
     .Run(args, config);

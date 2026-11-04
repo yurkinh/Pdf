@@ -4,17 +4,20 @@
         <OutputType>Exe</OutputType>
         <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <IsPackable>false</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Melville.Pdf.FontLibrary\Melville.Pdf.FontLibrary.csproj" />
         <ProjectReference Include="..\Melville.Pdf.ReferenceDocuments\Melville.Pdf.ReferenceDocuments.csproj" />
+        <ProjectReference Include="..\Melville.Pdf.MauiGraphics\Melville.Pdf.MauiGraphics.csproj" />
         <ProjectReference Include="..\Melville.Pdf.SkiaSharp\Melville.Pdf.SkiaSharp.csproj" />
     </ItemGroup>
 
     <ItemGroup>
       <PackageReference Include="BenchmarkDotNet" />
+      <PackageReference Include="Microsoft.Maui.Graphics.Skia" />
     </ItemGroup>
 
 </Project>
