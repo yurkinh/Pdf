@@ -66,3 +66,45 @@ jobs:
           dotnet build Melville.Pdf.MauiGraphics.Tests/Melville.Pdf.MauiGraphics.Tests.csproj -c Release
           dotnet test --project Melville.Pdf.MauiGraphics.Tests/Melville.Pdf.MauiGraphics.Tests.csproj -c Release --no-build -f net10.0
           dotnet test --project Melville.Pdf.MauiGraphics.Tests/Melville.Pdf.MauiGraphics.Tests.csproj -c Release --no-build -f net11.0
+
+  # The MAUI control and sample app. Build only: devices are checked by hand with DevFlow (spikes/README.md).
+  sample:
+    name: MAUI sample (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            workloads: maui-android maui-ios maui-maccatalyst
+            frameworks: net10.0-android net10.0-ios net10.0-maccatalyst
+          - os: windows-latest
+            workloads: maui-windows maui-android
+            frameworks: net10.0-windows10.0.19041.0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: Src/global.json
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workloads
+        run: dotnet workload install ${{ matrix.workloads }}
+
+      - name: Build Melville.StreamInterfaces into the local feed
+        shell: bash
+        run: ./build-local-packages.sh
+
+      - name: Build the sample
+        working-directory: Src
+        shell: bash
+        # iOS builds for the simulator, which needs no signing.
+        run: |
+          for tfm in ${{ matrix.frameworks }}; do
+            extra=""
+            if [[ $tfm == *-ios ]]; then extra="-p:RuntimeIdentifier=iossimulator-arm64"; fi
+            dotnet build Melville.Pdf.Maui.Sample/Melville.Pdf.Maui.Sample.csproj -c Release -f $tfm $extra
+          done

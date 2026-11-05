@@ -20,8 +20,15 @@ public static class MauiProgram
 			});
 
 		builder.UseMelvillePdf();
+		builder.Services.AddSingleton<Documents.DocumentCatalog>();
+		builder.Services.AddTransient<Library.LibraryPage>();
+		builder.Services.AddTransient<Library.LibraryViewModel>();
+		builder.Services.AddTransient<Gallery.GalleryPage>();
+		builder.Services.AddTransient<Gallery.GalleryViewModel>();
 		builder.Services.AddTransient<Viewer.ViewerPage>();
 		builder.Services.AddTransient<Viewer.ViewerViewModel>();
+		builder.Services.AddTransient<Diagnostics.DiagnosticsPage>();
+		builder.Services.AddTransient<Diagnostics.DiagnosticsViewModel>();
 		builder.Services.AddTransient<Spike.SpikePage>();
 		builder.Services.AddTransient<Spike.SpikeViewModel>();
 

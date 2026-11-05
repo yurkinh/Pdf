@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:library="clr-namespace:Melville.Pdf.Maui.Sample.Library"
+             xmlns:documents="clr-namespace:Melville.Pdf.Maui.Sample.Documents"
+             x:Class="Melville.Pdf.Maui.Sample.Library.LibraryPage"
+             x:DataType="library:LibraryViewModel"
+             Title="Library">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Open file…" AutomationId="Library.OpenFile" Command="{Binding OpenFileCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*">
+        <Label Text="{Binding Error}" IsVisible="{Binding HasError}"
+               TextColor="DarkRed" Margin="16,8" />
+        <CollectionView Grid.Row="1" AutomationId="Library.Documents"
+                        ItemsSource="{Binding Documents}">
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="documents:CatalogDocument">
+                    <VerticalStackLayout Padding="16,10" Spacing="2"
+                                         SemanticProperties.Description="{Binding Title}"
+                                         SemanticProperties.Hint="Opens the document">
+                        <Label Text="{Binding Title}" FontAttributes="Bold" FontSize="16" />
+                        <Label Text="{Binding Description}" FontSize="13"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenCommand, Source={RelativeSource AncestorType={x:Type library:LibraryViewModel}}}"
+                                                  CommandParameter="{Binding .}" />
+                        </VerticalStackLayout.GestureRecognizers>
+                    </VerticalStackLayout>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

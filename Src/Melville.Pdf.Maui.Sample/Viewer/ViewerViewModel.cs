@@ -1,86 +1,38 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
-using System.Windows.Input;
+using Melville.Pdf.LowLevel.Parsing.ParserContext;
 using Melville.Pdf.Maui.Controls;
-using Melville.Pdf.ReferenceDocuments.Infrastructure;
+using Melville.Pdf.Maui.Sample.Documents;
 
 namespace Melville.Pdf.Maui.Sample.Viewer;
 
-public sealed class ViewerViewModel : INotifyPropertyChanged
+/// <summary>The viewer page's state: which document, and where the user is in it.</summary>
+public sealed class ViewerViewModel : ObservableObject, IQueryAttributable
 {
-    private readonly Dictionary<string, IPdfGenerator> generators =
-        GeneratorFactory.AllGenerators.ToDictionary(g => g.Prefix.TrimStart('-'));
-
-    private string? selectedDocument;
     private PdfSource? source;
+    private IPasswordSource? passwordSource;
     private int pageNumber = 1;
     private string title = "No document";
 
-    public ViewerViewModel()
+    public PdfSource? Source { get => source; private set => Set(ref source, value); }
+
+    public IPasswordSource? PasswordSource { get => passwordSource; private set => Set(ref passwordSource, value); }
+
+    public int PageNumber { get => pageNumber; set => Set(ref pageNumber, value); }
+
+    public string Title { get => title; private set => Set(ref title, value); }
+
+    /// <summary>Shell passes the document chosen on another page (see <see cref="AppNavigation"/>).</summary>
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
-        Documents = generators.Keys.Order(StringComparer.Ordinal).ToList();
-        OpenFileCommand = new Command(async () => await OpenFileAsync());
+        if (!query.TryGetValue(AppNavigation.DocumentKey, out var value) || value is not CatalogDocument document) return;
+        Show(document);
     }
 
-    /// <summary>The reference documents, generated in memory when chosen.</summary>
-    public IReadOnlyList<string> Documents { get; }
-
-    public string? SelectedDocument
+    /// <summary>Show a document. The password source is set first: the viewer reads it when the source changes.</summary>
+    public void Show(CatalogDocument document)
     {
-        get => selectedDocument;
-        set
-        {
-            if (!Set(ref selectedDocument, value) || value is null || !generators.TryGetValue(value, out var generator)) return;
-            Title = value;
-            Source = PdfSource.FromStream(async _ =>
-            {
-                var bytes = new MemoryStream();
-                await generator.WritePdfAsync(bytes);
-                bytes.Position = 0;
-                return bytes;
-            });
-        }
-    }
-
-    public PdfSource? Source
-    {
-        get => source;
-        private set => Set(ref source, value);
-    }
-
-    public int PageNumber
-    {
-        get => pageNumber;
-        set => Set(ref pageNumber, value);
-    }
-
-    public string Title
-    {
-        get => title;
-        private set => Set(ref title, value);
-    }
-
-    public ICommand OpenFileCommand { get; }
-
-    private async Task OpenFileAsync()
-    {
-        var file = await FilePicker.Default.PickAsync(new PickOptions
-        {
-            PickerTitle = "Open a PDF",
-            FileTypes = FilePickerFileType.Pdf,
-        });
-        if (file is null) return; // cancelled
-        Title = file.FileName;
-        Source = PdfSource.FromFileResult(file);
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        return true;
+        Title = document.Title;
+        PageNumber = 1;
+        PasswordSource = new PasswordPrompt(document.Title, document.AskForPassword ? null : document.Password);
+        Source = document.Source;
     }
 }

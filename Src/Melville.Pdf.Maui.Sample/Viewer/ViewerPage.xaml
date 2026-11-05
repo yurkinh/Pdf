@@ -5,17 +5,12 @@
              xmlns:pdf="clr-namespace:Melville.Pdf.Maui.Controls;assembly=Melville.Pdf.Maui"
              x:Class="Melville.Pdf.Maui.Sample.Viewer.ViewerPage"
              x:DataType="viewer:ViewerViewModel"
-             Title="{Binding Title}">
+             Title="{Binding Title}"
+             Shell.TabBarIsVisible="False">
 
-    <Grid RowDefinitions="Auto,*">
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="8">
-            <Picker Title="Reference document" AutomationId="DocumentPicker"
-                    ItemsSource="{Binding Documents}"
-                    SelectedItem="{Binding SelectedDocument}" />
-            <Button Grid.Column="1" Text="Open file…" AutomationId="OpenFile" Command="{Binding OpenFileCommand}" />
-        </Grid>
-        <pdf:PdfViewer Grid.Row="1"
-                       Source="{Binding Source}"
-                       PageNumber="{Binding PageNumber}" />
-    </Grid>
+    <!-- PasswordSource before Source: the viewer reads the password source as soon as the source changes. -->
+    <pdf:PdfViewer AutomationId="Viewer.PdfViewer"
+                   PasswordSource="{Binding PasswordSource}"
+                   Source="{Binding Source}"
+                   PageNumber="{Binding PageNumber}" />
 </ContentPage>

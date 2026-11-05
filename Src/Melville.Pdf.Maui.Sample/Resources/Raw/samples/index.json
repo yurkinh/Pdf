@@ -1,0 +1,62 @@
+[
+  {
+    "file": "text-multipage.pdf",
+    "title": "Long text document",
+    "description": "120 pages of text in the standard fonts.",
+    "password": null
+  },
+  {
+    "file": "large-page.pdf",
+    "title": "Very large page",
+    "description": "One A0 page (2384 \u00D7 3370 pt) with fine line work.",
+    "password": null
+  },
+  {
+    "file": "layers.pdf",
+    "title": "Layers",
+    "description": "Three optional-content groups; turn them on and off in the layers panel.",
+    "password": null
+  },
+  {
+    "file": "encrypted.pdf",
+    "title": "Encrypted (password: melville)",
+    "description": "AES-256 encryption. The user password is \u0022melville\u0022.",
+    "password": "melville"
+  },
+  {
+    "file": "reference-JpegImage.pdf",
+    "title": "JPEG image",
+    "description": "DCT-encoded colour image.",
+    "password": null
+  },
+  {
+    "file": "reference-Jpeg2000ColorImage.pdf",
+    "title": "JPEG 2000 image",
+    "description": "JPX-encoded colour image.",
+    "password": null
+  },
+  {
+    "file": "reference-JBigSampleBitStream1.pdf",
+    "title": "JBIG2 scan",
+    "description": "JBIG2-encoded bilevel image, as produced by scanners.",
+    "password": null
+  },
+  {
+    "file": "reference-CcittType4Encoded.pdf",
+    "title": "CCITT fax scan",
+    "description": "CCITT Group 4 encoded bilevel image.",
+    "password": null
+  },
+  {
+    "file": "reference-ColoredTilePattern.pdf",
+    "title": "Tiling pattern",
+    "description": "Coloured tiling pattern used as a fill.",
+    "password": null
+  },
+  {
+    "file": "reference-Type3RadialShader.pdf",
+    "title": "Radial shading",
+    "description": "Type 3 (radial) shading.",
+    "password": null
+  }
+]

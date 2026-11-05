@@ -90,6 +90,26 @@ Speed (net10.0, 1024 px, this Mac), recording a page vs a full SkiaSharp render:
   - The CLI parses decimals with the current culture, so set `LC_ALL=en_US.UTF-8` on decimal-comma locales.
   - On Android the agent did not register with the broker. Use `adb forward tcp:19300 tcp:9223` and `--agent-port 19300`.
 
+## Phase 6 results (sample app)
+
+The sample now has four tabs, plus a viewer page opened from them:
+- **Library**: 10 bundled PDFs and Open file….
+- **Gallery**: all 239 reference documents, with a filter.
+- **Diagnostics**: timings for one page, Maui.Graphics and SkiaSharp renders side by side, and a smoke test that records every page of every document.
+- **Checks**: the phase 1 canvas checks.
+
+The bundled PDFs (`Resources/Raw/samples`) are written by `Src/tools/BuildSampleCorpus.cs`, a file-based app, from original generated content and reference generators, so there are no licensing questions. `SampleCorpusTest` checks that every bundled file is indexed and records on every page, that the encrypted one needs its password, and that the layers document has three layers that start visible and can be hidden.
+
+Smoke test (every page of all 249 documents, Debug builds): **0 failures** on Mac Catalyst (230 s), the Android 17 emulator (139 s) and the iOS 26.5 simulator (119 s). The encrypted sample opens with its password on all three.
+
+Checked on Mac Catalyst through DevFlow: Library, Gallery filter and open, encrypted document (wrong password → retry prompt → correct password opens; Cancel → error message), layers panel toggling, and Diagnostics.
+
+- **Password prompt**: a modal page with a masked `Entry`, because `DisplayPromptAsync` cannot hide input. Its `TaskCompletionSource` must use `RunContinuationsAsynchronously`. Otherwise the reader resumes inside the button handler on the UI thread, and a wrong password hung the app (it was then killed by an unhandled exception in a finalizer).
+- **Optional content (upstream)**: a group without `/Intent` starts hidden. The spec's default is `/View`, but upstream's `OptionalContentParserTest.DefaultVisibilityAsync` expects hidden, so it is left as is. Such groups are still drawn until a layer is toggled, so the layers panel and the page disagree. The sample states `/Intent /View` and `/BaseState /ON` explicitly.
+- **Layers panel**: `MeasureFirstItem` truncated longer layer names to the first row's width. Removed.
+- **DevFlow**: `ui tap` does not trigger CollectionView selection, so rows use a `TapGestureRecognizer` command. Tapping by `--text` hits the label, which has no handler, so the script taps the row (the label's parent). Each separate CLI call can hit the session lock, so one long-lived `maui devflow batch` process is driven from a script.
+- **Not done**: CJK samples (the CJK font library is 468 MB), "Open in…" document types on iOS/Android, packaged MSIX on Windows (still unpackaged; no Windows machine). CI builds the sample but runs no device tests.
+
 ## Other findings
 
 - **Concurrent JPEG decodes corrupted each other** (fixed in phase 4). `JpegStreamFactory` returned its pooled output buffer to `ArrayPool<byte>.Shared` while the decoded stream still read it, and the stream returned it again on dispose. The stream also read past the decoded length into stale pool data. Twelve concurrent renders of one JPEG gave about 90 different outputs, with wrong colours, in **both** renderers, and the shared pool spread the damage to unrelated code (a CMap document failed once). Introduced upstream on 2026-10-12. Fixed, with a regression test, on local branch `fix/jpeg-pooled-buffer-ownership` (not yet proposed upstream).

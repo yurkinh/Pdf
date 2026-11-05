@@ -125,8 +125,10 @@ public partial class PdfViewer : ContentView
         {
             IsVisible = false,
             HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-            HorizontalTextAlignment = TextAlignment.Center, Margin = 24, TextColor = Colors.DarkRed,
+            HorizontalTextAlignment = TextAlignment.Center, Margin = 24,
         };
+        // Dark red is unreadable on the dark-theme background.
+        error.SetAppThemeColor(Label.TextColorProperty, Colors.DarkRed, Color.FromArgb("#FF8A80"));
 
         var content = new Grid { Children = { pageView, spinner, error, CreateLayersPanel() } };
         var toolbar = CreateToolbar();
@@ -451,8 +453,8 @@ public partial class PdfViewer : ContentView
     {
         var list = new CollectionView
         {
+            // Not MeasureFirstItem: that gives every row the first row's width and truncates longer layer names.
             ItemsLayout = new LinearItemsLayout(ItemsLayoutOrientation.Vertical),
-            ItemSizingStrategy = ItemSizingStrategy.MeasureFirstItem,
             ItemTemplate = new DataTemplate(() =>
             {
                 var check = new CheckBox { VerticalOptions = LayoutOptions.Center };
