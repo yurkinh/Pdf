@@ -80,6 +80,16 @@ Fidelity against the SkiaSharp renderer, per reference document (239). Both rend
 
 Speed (net10.0, 1024 px, this Mac), recording a page vs a full SkiaSharp render: 0.19–0.67× for text, patterns and shadings; 1.85× for an upscaled JPEG (managed bilinear resampling). Replay, which happens on every redraw, costs 0.2–4.2× a full render (about 2 ms for a text page, 1.5 ms for a tiling pattern). So the planned glyph cache is not needed, but the control should cache the replayed page as a bitmap while the user pans and zooms.
 
+## Phase 5 results (viewer control)
+
+`PdfViewer` (Melville.Pdf.Maui) was checked through DevFlow on Mac Catalyst and on an Android 17 emulator. Both open at fit-page, pinch-zoom around the touch point, pan, and toggle fit/2× on double-tap, rendering at screen density. The replayed page is cached as a platform bitmap (up to 6 MP), refreshed 150 ms after the last gesture. Not checked yet: iOS, and Windows (no machine, and mouse-wheel zoom is not done).
+
+- **ParsingBuffer bug in Melville.StreamInterfaces** (patch 0004). A content-stream token as long as the whole buffer made `ParsingBuffer` ask for 0 more bytes, which failed with ``"minimumBytes" should be between 0 and 0 but is 1``. Pages 3–5 of `-FiltersGenerator` failed in **both** renderers. The new `EveryPageRecords` test renders every page of every document (253 pages); before, only page 1 was tested. This is a candidate upstream fix.
+- **DevFlow friction**:
+  - Run one `maui devflow batch` per sequence. Separate commands hit "Another DevFlow session is driving this app".
+  - The CLI parses decimals with the current culture, so set `LC_ALL=en_US.UTF-8` on decimal-comma locales.
+  - On Android the agent did not register with the broker. Use `adb forward tcp:19300 tcp:9223` and `--agent-port 19300`.
+
 ## Other findings
 
 - **Concurrent JPEG decodes corrupted each other** (fixed in phase 4). `JpegStreamFactory` returned its pooled output buffer to `ArrayPool<byte>.Shared` while the decoded stream still read it, and the stream returned it again on dispose. The stream also read past the decoded length into stale pool data. Twelve concurrent renders of one JPEG gave about 90 different outputs, with wrong colours, in **both** renderers, and the shared pool spread the damage to unrelated code (a CMap document failed once). Introduced upstream on 2026-10-12. Fixed, with a regression test, on local branch `fix/jpeg-pooled-buffer-ownership` (not yet proposed upstream).

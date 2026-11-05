@@ -27,6 +27,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Melville.Pdf.FontLibrary\Melville.Pdf.FontLibrary.csproj" />
 		<ProjectReference Include="..\Melville.Pdf.MauiGraphics\Melville.Pdf.MauiGraphics.csproj" />
 	</ItemGroup>
 

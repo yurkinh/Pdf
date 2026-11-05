@@ -133,3 +133,54 @@ public class ConcurrentRenderingTest
             [$"renders: {work.Count}, differing: {differences.Count}", .. differences.Order()], TestContext.Current.CancellationToken);
     }
 }
+
+public class AllPagesTest
+{
+    /// <summary>Render every page of every document with both renderers; write every page that throws.</summary>
+    [Fact(Explicit = true)]
+    public async Task RenderEveryPage()
+    {
+        var folder = Environment.GetEnvironmentVariable("MELVILLE_DUMP_DIR") ?? Path.GetTempPath();
+        var lines = new List<string>();
+        int pages = 0;
+        foreach (var generator in GeneratorFactory.AllGenerators.OrderBy(g => g.Prefix, StringComparer.Ordinal))
+        {
+            Melville.Pdf.Model.Renderers.DocumentRenderers.DocumentRenderer document;
+            try { document = await Renders.OpenAsync(generator); }
+            catch (Exception e) { lines.Add($"{generator.Prefix}\topen\t{e.GetType().Name}: {e.Message}"); continue; }
+            using (document)
+            {
+                for (int page = 1; page <= document.TotalPages; page++)
+                {
+                    pages++;
+                    string? maui = null, skia = null;
+                    try { await RenderWithMauiGraphics.RecordPageAsync(document, page); }
+                    catch (Exception e) { maui = $"{e.GetType().Name}: {e.Message.ReplaceLineEndings(" ")}"; }
+                    try { using var _ = await Melville.Pdf.SkiaSharp.RenderWithSkia.ToSurfaceAsync(document, page, 200, -1); }
+                    catch (Exception e) { skia = $"{e.GetType().Name}: {e.Message.ReplaceLineEndings(" ")}"; }
+                    if (maui is not null || skia is not null)
+                        lines.Add($"{generator.Prefix}\tpage {page}/{document.TotalPages}\tmaui: {maui ?? "ok"}\tskia: {skia ?? "ok"}");
+                }
+            }
+        }
+        lines.Insert(0, $"pages rendered: {pages}, failing: {lines.Count}");
+        await File.WriteAllLinesAsync(Path.Combine(folder, "allpages.txt"), lines, TestContext.Current.CancellationToken);
+    }
+}
+
+public class PageStackTraceTest
+{
+    /// <summary>Write the full exception for page MELVILLE_PAGE of MELVILLE_DUMP.</summary>
+    [Fact(Explicit = true)]
+    public async Task WriteStackTrace()
+    {
+        var generator = GeneratorFactory.AllGenerators.Single(g => g.Prefix == Environment.GetEnvironmentVariable("MELVILLE_DUMP"));
+        var page = int.Parse(Environment.GetEnvironmentVariable("MELVILLE_PAGE") ?? "1");
+        using var document = await Renders.OpenAsync(generator);
+        string text;
+        try { await RenderWithMauiGraphics.RecordPageAsync(document, page); text = "ok"; }
+        catch (Exception e) { text = e.ToString(); }
+        await File.WriteAllTextAsync(Path.Combine(Environment.GetEnvironmentVariable("MELVILLE_DUMP_DIR")!, "stack.txt"), text,
+            TestContext.Current.CancellationToken);
+    }
+}

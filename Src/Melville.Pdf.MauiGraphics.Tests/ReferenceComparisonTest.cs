@@ -43,6 +43,42 @@ public class ReferenceComparisonTest(ITestOutputHelper output)
         Assert.True(difference <= Tolerance, $"{prefix}: {difference:P2} of pixels differ (tolerance {Tolerance:P0})");
     }
 
+    /// <summary>
+    /// Every page, not just the first: phase 5 found pages 3-5 of -FiltersGenerator failing in both renderers
+    /// (a ParsingBuffer bug in Melville.StreamInterfaces with very long content-stream tokens).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Documents))]
+    public async Task EveryPageRecords(string prefix)
+    {
+        var generator = GeneratorFactory.AllGenerators.Single(g => g.Prefix == prefix);
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var document = await Renders.OpenAsync(generator);
+                for (int page = 1; page <= document.TotalPages; page++)
+                {
+                    try
+                    {
+                        var list = await RenderWithMauiGraphics.RecordPageAsync(document, page);
+                        Assert.True(list.PageWidth > 0 && list.PageHeight > 0, $"{prefix} page {page} has no size");
+                    }
+                    catch (Exception e) when (e is not Xunit.Sdk.XunitException)
+                    {
+                        Assert.Fail($"{prefix} page {page} of {document.TotalPages}: {e.GetType().Name}: {e.Message}");
+                    }
+                }
+                return;
+            }
+            // Encrypted documents that cannot be read back (upstream bug, see below): regenerate.
+            catch (Exception e) when (attempt < 3 && generator.Prefix.StartsWith("-Encrypted") &&
+                                      e.GetType().Name is "PdfParseException" or "PostscriptNamedErrorException")
+            {
+            }
+        }
+    }
+
     // Upstream issue, not the renderer: encrypted reference documents use random keys, and about 0.3-1.3% of them
     // cannot be read back (PdfParseException "Unknown token" or a PostScript stack overflow while parsing the
     // encryption dictionary). Regenerate those few; any other failure, or a renderer exception, still fails.

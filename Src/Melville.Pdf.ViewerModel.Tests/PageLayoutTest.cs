@@ -45,3 +45,38 @@ public class PageLayoutTest
         PageLayout.Compute(vw, vh, pw, ph, ZoomMode.FitPage, 1).Should().Be(default(PageLayout));
     }
 }
+
+public class PageLayoutScrollTest
+{
+    [Fact]
+    public void ScrollMovesAPageLargerThanTheViewport()
+    {
+        // 400x400 page at scale 2 is 800x800 in a 400x400 viewport: 400 to scroll each way.
+        var layout = PageLayout.Compute(400, 400, 400, 400, ZoomMode.Custom, 2, scrollX: 100, scrollY: 50);
+
+        (layout.MaxScrollX, layout.MaxScrollY).Should().Be((400, 400));
+        (layout.ScrollX, layout.ScrollY).Should().Be((100, 50));
+        (layout.OffsetX, layout.OffsetY).Should().Be((-100, -50));
+    }
+
+    [Theory]
+    [InlineData(-50, 0)]
+    [InlineData(1000, 400)]
+    public void ScrollIsClampedToTheContent(double requested, double expected) =>
+        PageLayout.Compute(400, 400, 400, 400, ZoomMode.Custom, 2, requested, requested)
+            .ScrollX.Should().Be(expected);
+
+    [Fact]
+    public void APageThatFitsIgnoresScrollAndStaysCentred()
+    {
+        var layout = PageLayout.Compute(400, 400, 100, 100, ZoomMode.Custom, 1, scrollX: 30, scrollY: 30);
+        (layout.OffsetX, layout.OffsetY, layout.ScrollX).Should().Be((150, 150, 0));
+    }
+
+    [Fact]
+    public void ToPageInvertsTheLayout()
+    {
+        var layout = PageLayout.Compute(400, 400, 400, 400, ZoomMode.Custom, 2, 100, 50);
+        layout.ToPage(0, 0).Should().Be((50, 25));
+    }
+}

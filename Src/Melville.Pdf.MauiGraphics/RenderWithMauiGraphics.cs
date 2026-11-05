@@ -42,11 +42,19 @@ public static class RenderWithMauiGraphics
     /// corner at the canvas origin. The canvas state is unchanged afterwards.
     /// </summary>
     public static void Draw(this PdfDisplayList page, ICanvas canvas, IPdfImageFactory images,
-        CanvasQuirks quirks, float scale = 1)
+        CanvasQuirks quirks, float scale = 1) =>
+        page.Draw(canvas, images, quirks, Matrix3x2.CreateScale(scale));
+
+    /// <summary>
+    /// Draw a recorded page onto a canvas, mapping PDF points (origin at the page's top-left corner) to canvas
+    /// units with <paramref name="pageToCanvas"/>. The canvas state is unchanged afterwards.
+    /// </summary>
+    public static void Draw(this PdfDisplayList page, ICanvas canvas, IPdfImageFactory images,
+        CanvasQuirks quirks, Matrix3x2 pageToCanvas)
     {
         var adapter = new MauiCanvasAdapter(canvas, images, quirks);
         adapter.SaveState();
-        adapter.ConcatenateTransform(Matrix3x2.CreateScale(scale * page.PointsPerUnit));
+        adapter.ConcatenateTransform(Matrix3x2.CreateScale(page.PointsPerUnit) * pageToCanvas);
         page.Replay(adapter);
         adapter.RestoreState();
     }

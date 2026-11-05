@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewer="clr-namespace:Melville.Pdf.Maui.Sample.Viewer"
+             xmlns:pdf="clr-namespace:Melville.Pdf.Maui.Controls;assembly=Melville.Pdf.Maui"
+             x:Class="Melville.Pdf.Maui.Sample.Viewer.ViewerPage"
+             x:DataType="viewer:ViewerViewModel"
+             Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="8">
+            <Picker Title="Reference document" AutomationId="DocumentPicker"
+                    ItemsSource="{Binding Documents}"
+                    SelectedItem="{Binding SelectedDocument}" />
+            <Button Grid.Column="1" Text="Open file…" AutomationId="OpenFile" Command="{Binding OpenFileCommand}" />
+        </Grid>
+        <pdf:PdfViewer Grid.Row="1"
+                       Source="{Binding Source}"
+                       PageNumber="{Binding PageNumber}" />
+    </Grid>
+</ContentPage>

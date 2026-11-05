@@ -1,0 +1,46 @@
+diff --git a/Src/IntegrationTesting/Streams/ParsingBufferTest.cs b/Src/IntegrationTesting/Streams/ParsingBufferTest.cs
+index aae5813..716321e 100644
+--- a/Src/IntegrationTesting/Streams/ParsingBufferTest.cs
++++ b/Src/IntegrationTesting/Streams/ParsingBufferTest.cs
+@@ -26,6 +26,27 @@ public class FakeRead : IAsyncReader
+     }
+ }
+ 
++public class ParsingBufferFullBufferTest
++{
++    // A full buffer whose data no longer starts at the front (after an Advance) has no room at the end. Reading more
++    // must first move the data to the front; it used to read into an empty slice and throw ArgumentException
++    // ("minimumBytes should be between 0 and 0 but is 1"), seen on PDF content streams with very long strings.
++    [Test]
++    public async Task ReadAfterAdvanceInAFullBufferAsync()
++    {
++        var source = new FakeRead { Length = 4096 };
++        using var sut = new ParsingBuffer(source, 64);
++        await sut.ReadBytesAsync();
++        var capacity = sut.Peek().Length; // the whole rented buffer is now full
++        await sut.AdvanceAsync(2);
++
++        var read = await sut.ReadBytesAsync();
++
++        read.Should().BeGreaterThan(0);
++        sut.Peek().Length.Should().Be(capacity - 2 + read);
++    }
++}
++
+ public class ParsingBufferTest : IDisposable
+ {
+     private readonly FakeRead source = new();
+diff --git a/Src/Melville.StreamInterfaces/ParsingBuffers/ParsingBuffer.cs b/Src/Melville.StreamInterfaces/ParsingBuffers/ParsingBuffer.cs
+index 431cb58..dcc405e 100644
+--- a/Src/Melville.StreamInterfaces/ParsingBuffers/ParsingBuffer.cs
++++ b/Src/Melville.StreamInterfaces/ParsingBuffers/ParsingBuffer.cs
+@@ -268,7 +268,8 @@ public partial class ParsingBuffer: IDisposable
+             ResetToNewBuffer();
+         }
+         else if (
+-            firstByte + desiredSize > bufferLength ||
++            // No room after the data for the bytes wanted, or for even one more byte: reading would get an empty slice.
++            firstByte + Math.Max(desiredSize, CurrentLength + 1) > bufferLength ||
+             firstByte > bufferLength / 2 ||
+             CurrentLength < 17)
+         {

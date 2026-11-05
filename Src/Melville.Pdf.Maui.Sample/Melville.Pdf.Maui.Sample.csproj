@@ -82,6 +82,14 @@
 		<Compile Include="..\..\spikes\MauiGraphicsSpike\CanvasChecks.cs" Link="Spike\CanvasChecks.cs" />
 	</ItemGroup>
 
+	<!-- DevFlow (UI inspection and automation for agents) only in Debug builds. -->
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<PackageReference Include="Microsoft.Maui.DevFlow.Agent" Version="0.1.0-preview.14.26531.2" />
+	</ItemGroup>
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+		<CodesignEntitlements>Platforms/MacCatalyst/Entitlements.Debug.plist</CodesignEntitlements>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />

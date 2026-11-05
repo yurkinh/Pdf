@@ -31,13 +31,22 @@ public static class PdfPageDrawing
     /// Draw a page with its top-left corner at the canvas origin, at <paramref name="scale"/> canvas units per PDF
     /// point. The canvas state is unchanged afterwards.
     /// </summary>
-    public static void Draw(PdfDisplayList page, ICanvas canvas, float scale)
+    public static void Draw(PdfDisplayList page, ICanvas canvas, float scale) =>
+        Draw(page, canvas, scale, 0, 0);
+
+    /// <summary>
+    /// Draw a page at <paramref name="scale"/> canvas units per PDF point with its top-left corner at
+    /// (<paramref name="x"/>, <paramref name="y"/>). The canvas state is unchanged afterwards.
+    /// </summary>
+    public static void Draw(PdfDisplayList page, ICanvas canvas, float scale, float x, float y)
     {
+        var placement = System.Numerics.Matrix3x2.CreateScale(scale) * System.Numerics.Matrix3x2.CreateTranslation(x, y);
 #if ANDROID
+        // Drawn on the native canvas under the ScalingCanvas, so its density becomes part of the transform.
         var (target, density) = AndroidPdfCanvas.Unwrap(canvas);
-        page.Draw(target, ImageFactory, Quirks, scale * density);
+        page.Draw(target, ImageFactory, Quirks, placement * System.Numerics.Matrix3x2.CreateScale(density));
 #else
-        page.Draw(canvas, ImageFactory, Quirks, scale);
+        page.Draw(canvas, ImageFactory, Quirks, placement);
 #endif
     }
 }

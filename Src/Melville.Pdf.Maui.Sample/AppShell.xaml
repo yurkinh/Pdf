@@ -4,11 +4,18 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:spike="clr-namespace:Melville.Pdf.Maui.Sample.Spike"
+    xmlns:viewer="clr-namespace:Melville.Pdf.Maui.Sample.Viewer"
     Title="Melville.Pdf.Maui.Sample">
 
-    <ShellContent
-        Title="Phase 1 checks"
-        ContentTemplate="{DataTemplate spike:SpikePage}"
-        Route="SpikePage" />
+    <TabBar>
+        <ShellContent
+            Title="Viewer"
+            ContentTemplate="{DataTemplate viewer:ViewerPage}"
+            Route="ViewerPage" />
+        <ShellContent
+            Title="Checks"
+            ContentTemplate="{DataTemplate spike:SpikePage}"
+            Route="SpikePage" />
+    </TabBar>
 
 </Shell>

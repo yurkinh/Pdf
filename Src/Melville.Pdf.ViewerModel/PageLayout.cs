@@ -17,18 +17,20 @@ public enum ZoomMode
 
 /// <summary>
 /// Where a page sits in the viewport: draw the page with Scale, offset by (OffsetX, OffsetY).
-/// ContentWidth and ContentHeight are the scaled page size, for scrolling.
+/// ContentWidth and ContentHeight are the scaled page size; ScrollX/ScrollY are how far a page larger than
+/// the viewport is scrolled, between 0 and MaxScrollX/MaxScrollY.
 /// </summary>
 public readonly record struct PageLayout(
-    double Scale, double OffsetX, double OffsetY, double ContentWidth, double ContentHeight)
+    double Scale, double OffsetX, double OffsetY, double ContentWidth, double ContentHeight,
+    double ScrollX = 0, double ScrollY = 0, double MaxScrollX = 0, double MaxScrollY = 0)
 {
     /// <summary>
-    /// Lay a page out in a viewport. A page smaller than the viewport is centred on that axis;
-    /// a larger one starts at 0 so it can scroll.
+    /// Lay a page out in a viewport. A page smaller than the viewport is centred on that axis; a larger one is
+    /// shifted by the scroll offset, clamped so the page never leaves an empty edge.
     /// </summary>
     public static PageLayout Compute(
         double viewportWidth, double viewportHeight, double pageWidth, double pageHeight,
-        ZoomMode mode, double customScale)
+        ZoomMode mode, double customScale, double scrollX = 0, double scrollY = 0)
     {
         if (viewportWidth <= 0 || viewportHeight <= 0 || pageWidth <= 0 || pageHeight <= 0)
             return default;
@@ -40,8 +42,17 @@ public readonly record struct PageLayout(
         };
         var width = pageWidth * scale;
         var height = pageHeight * scale;
-        return new PageLayout(scale, Center(viewportWidth, width), Center(viewportHeight, height), width, height);
+        double maxX = Math.Max(0, width - viewportWidth), maxY = Math.Max(0, height - viewportHeight);
+        double sx = Math.Clamp(scrollX, 0, maxX), sy = Math.Clamp(scrollY, 0, maxY);
+        return new PageLayout(scale, Offset(viewportWidth, width, sx), Offset(viewportHeight, height, sy),
+            width, height, sx, sy, maxX, maxY);
     }
 
-    private static double Center(double viewport, double content) => Math.Max(0, (viewport - content) / 2);
+    // Centred when the page fits on this axis, otherwise moved by the scroll offset.
+    private static double Offset(double viewport, double content, double scroll) =>
+        content <= viewport ? (viewport - content) / 2 : -scroll;
+
+    /// <summary>The point on the page (in PDF points) under a viewport point.</summary>
+    public (double X, double Y) ToPage(double viewportX, double viewportY) =>
+        Scale <= 0 ? (0, 0) : ((viewportX - OffsetX) / Scale, (viewportY - OffsetY) / Scale);
 }

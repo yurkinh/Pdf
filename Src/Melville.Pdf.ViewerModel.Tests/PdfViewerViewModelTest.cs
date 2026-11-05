@@ -172,3 +172,70 @@ public class PdfViewerViewModelTest
         renderer.Requested.Should().HaveCount(before);
     }
 }
+
+public class PdfViewerViewModelPanZoomTest
+{
+    private readonly FakePageRenderer renderer = new();
+
+    private async Task<PdfViewerViewModel<FakePage>> CreateAsync()
+    {
+        var sut = await PdfViewerViewModel<FakePage>.CreateAsync(await TestDocuments.MultiPageAsync(3), renderer);
+        sut.SetViewport(306, 396); // the 612x792 page fits at scale 0.5
+        return sut;
+    }
+
+    [Fact]
+    public async Task ZoomAtKeepsThePointUnderTheFingerInPlace()
+    {
+        await using var sut = await CreateAsync();
+        var before = sut.Layout.ToPage(200, 100);
+
+        sut.ZoomAt(4, 200, 100);
+
+        sut.ZoomMode.Should().Be(ZoomMode.Custom);
+        sut.Layout.Scale.Should().Be(2);
+        var after = sut.Layout.ToPage(200, 100);
+        after.X.Should().BeApproximately(before.X, 1e-9);
+        after.Y.Should().BeApproximately(before.Y, 1e-9);
+    }
+
+    [Fact]
+    public async Task PanByScrollsAndIsClamped()
+    {
+        await using var sut = await CreateAsync();
+        sut.ZoomAt(2, 0, 0); // scale 1: the page is 612x792 in a 306x396 viewport
+
+        sut.PanBy(-100, -50); // drag up-left: the page moves up-left, so the view scrolls right and down
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((100, 50));
+
+        sut.PanBy(10_000, 10_000);
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((0, 0));
+    }
+
+    [Fact]
+    public async Task ANewPageStartsAtTheTopLeft()
+    {
+        await using var sut = await CreateAsync();
+        sut.ZoomAt(2, 0, 0);
+        sut.PanBy(-100, -100);
+
+        sut.PageSelector.Page = 2;
+        await sut.WaitUntilAsync(() => sut.CurrentPage?.Content.Number == 2);
+
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((0, 0));
+        sut.Layout.Scale.Should().Be(1, "the zoom stays");
+    }
+
+    [Fact]
+    public async Task ZoomButtonsZoomAroundTheViewportCentre()
+    {
+        await using var sut = await CreateAsync();
+        var centre = sut.Layout.ToPage(153, 198);
+
+        sut.ZoomInCommand.Execute(null);
+
+        var after = sut.Layout.ToPage(153, 198);
+        after.X.Should().BeApproximately(centre.X, 1e-9);
+        after.Y.Should().BeApproximately(centre.Y, 1e-9);
+    }
+}

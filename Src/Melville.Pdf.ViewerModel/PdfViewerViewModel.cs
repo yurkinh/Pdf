@@ -33,6 +33,9 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private double customScale = 1;
     private double viewportWidth;
     private double viewportHeight;
+    private double scrollX;
+    private double scrollY;
+    private int layoutPageNumber;
     private PageLayout layout;
 
     private PdfViewerViewModel(DocumentRenderer document, IPageRenderer<TPage> renderer)
@@ -45,8 +48,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         if (document.OptionalContentState is INotifyPropertyChanged notifying)
             notifying.PropertyChanged += OnOptionalContentStateChanged;
 
-        ZoomInCommand = new RelayCommand(() => SetCustomScale(layout.Scale * ZoomStep), () => CanZoom(ZoomStep), this);
-        ZoomOutCommand = new RelayCommand(() => SetCustomScale(layout.Scale / ZoomStep), () => CanZoom(1 / ZoomStep), this);
+        ZoomInCommand = new RelayCommand(() => ZoomAt(ZoomStep, viewportWidth / 2, viewportHeight / 2), () => CanZoom(ZoomStep), this);
+        ZoomOutCommand = new RelayCommand(() => ZoomAt(1 / ZoomStep, viewportWidth / 2, viewportHeight / 2), () => CanZoom(1 / ZoomStep), this);
         FitPageCommand = new RelayCommand(() => ZoomMode = ZoomMode.FitPage, () => ZoomMode != ZoomMode.FitPage, this);
         FitWidthCommand = new RelayCommand(() => ZoomMode = ZoomMode.FitWidth, () => ZoomMode != ZoomMode.FitWidth, this);
     }
@@ -129,10 +132,40 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         private set => Set(ref layout, value);
     }
 
-    /// <summary>Zoom in by one step from the current scale; switches to Custom mode.</summary>
+    /// <summary>
+    /// Scroll a page that is larger than the viewport by a drag of (dx, dy) viewport units: dragging right
+    /// moves the page right. Clamped so the page never leaves an empty edge.
+    /// </summary>
+    public void PanBy(double dx, double dy)
+    {
+        scrollX -= dx;
+        scrollY -= dy;
+        UpdateLayout();
+    }
+
+    /// <summary>
+    /// Zoom by <paramref name="factor"/> keeping the page point under (viewportX, viewportY) in place, as a pinch
+    /// does. Switches to Custom mode; the scale is clamped to 0.1–16.
+    /// </summary>
+    public void ZoomAt(double factor, double viewportX, double viewportY)
+    {
+        if (layout.Scale <= 0 || factor <= 0) return;
+        var (pageX, pageY) = layout.ToPage(viewportX, viewportY);
+        var scale = Math.Clamp(layout.Scale * factor, MinScale, MaxScale);
+        customScale = scale;
+        zoomMode = ZoomMode.Custom;
+        // Where the page origin must sit for that point to stay under the finger; scroll is minus that offset.
+        scrollX = pageX * scale - viewportX;
+        scrollY = pageY * scale - viewportY;
+        UpdateLayout();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CustomScale)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZoomMode)));
+    }
+
+    /// <summary>Zoom in by one step around the viewport centre; switches to Custom mode.</summary>
     public ICommand ZoomInCommand { get; }
 
-    /// <summary>Zoom out by one step from the current scale; switches to Custom mode.</summary>
+    /// <summary>Zoom out by one step around the viewport centre; switches to Custom mode.</summary>
     public ICommand ZoomOutCommand { get; }
 
     /// <summary>Show the whole page.</summary>
@@ -223,18 +256,23 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private bool CanZoom(double factor) =>
         layout.Scale > 0 && Math.Clamp(layout.Scale * factor, MinScale, MaxScale) != layout.Scale;
 
-    private void SetCustomScale(double scale)
-    {
-        CustomScale = scale;
-        ZoomMode = ZoomMode.Custom;
-        UpdateLayout();
-    }
-
     private void UpdateLayout()
     {
-        Layout = currentPage is { } page
-            ? PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, zoomMode, customScale)
-            : default;
+        if (currentPage is not { } page)
+        {
+            Layout = default;
+            return;
+        }
+        // A newly shown page starts at its top-left corner.
+        if (pageSelector.Page != layoutPageNumber)
+        {
+            layoutPageNumber = pageSelector.Page;
+            scrollX = scrollY = 0;
+        }
+        var computed = PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height,
+            zoomMode, customScale, scrollX, scrollY);
+        (scrollX, scrollY) = (computed.ScrollX, computed.ScrollY); // keep the clamped values
+        Layout = computed;
     }
 
     /// <summary>
