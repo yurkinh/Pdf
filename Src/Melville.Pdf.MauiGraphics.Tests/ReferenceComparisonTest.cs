@@ -115,7 +115,7 @@ public class ReferenceComparisonTest(ITestOutputHelper output)
             }
         }
         foreach (var (name, result, _) in rows.OrderByDescending(r => r.Diff))
-            report.AppendLine($"{name}\t{result}");
+            report.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"{name}\t{result}");
         var path = Path.Combine(Path.GetTempPath(), "maui-vs-skia.tsv");
         await File.WriteAllTextAsync(path, report.ToString(), TestContext.Current.CancellationToken);
         output.WriteLine($"Report: {path}");

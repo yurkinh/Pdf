@@ -175,7 +175,7 @@ public class PageStackTraceTest
     public async Task WriteStackTrace()
     {
         var generator = GeneratorFactory.AllGenerators.Single(g => g.Prefix == Environment.GetEnvironmentVariable("MELVILLE_DUMP"));
-        var page = int.Parse(Environment.GetEnvironmentVariable("MELVILLE_PAGE") ?? "1");
+        var page = int.Parse(Environment.GetEnvironmentVariable("MELVILLE_PAGE") ?? "1", System.Globalization.CultureInfo.InvariantCulture);
         using var document = await Renders.OpenAsync(generator);
         string text;
         try { await RenderWithMauiGraphics.RecordPageAsync(document, page); text = "ok"; }

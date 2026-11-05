@@ -32,7 +32,11 @@ internal static class StaticCodecFactory
             { KnownNames.RunLengthDecode, new CodecDefinition(new(_=>new RunLengthEncoder()), new(_=>new RunLengthDecoder())) },
             { KnownNames.LZWDecode, new CodecDefinition(
                 new(LzwFilterFactory.EncoderAsync), new(LzwFilterFactory.DecoderAsync))},
+#if NET11_0_OR_GREATER
+            { KnownNames.FlateDecode, new CodecDefinition(new(_=>new FlateEncoder()),new(_=>new FlateDecoder())) },
+#else
             { KnownNames.FlateDecode, new FlateCodecDefinition() },
+#endif
             { KnownNames.DCTDecode, new DctCodec() },
             { KnownNames.JBIG2Decode, new JbigToPdfAdapter()},
             { KnownNames.JPXDecode, new JpxToPdfAdapter()},

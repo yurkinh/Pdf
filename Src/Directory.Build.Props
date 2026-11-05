@@ -17,6 +17,7 @@
          -p:MelvilleRuntimeAsync=false turns it off on net11.0 too (benchmarks, mobile runtime fallback). -->
     <PropertyGroup Condition="$(TargetFramework.StartsWith('net11.0')) And '$(MelvilleRuntimeAsync)' != 'false'">
 		<Features>$(Features);runtime-async=on</Features>
+		<WarningsAsErrors>$(WarningsAsErrors);CA1305</WarningsAsErrors>
     </PropertyGroup>
 
 	<ItemGroup>

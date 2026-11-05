@@ -5,6 +5,9 @@
         <TargetFrameworks>$(MelvilleLibraryTfms)</TargetFrameworks>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Nullable>disable</Nullable>
+        <!-- Third-party fork: CA1305 (made an error in Directory.Build.Props) flags ~90 debug ToString calls here,
+             in upstream main as well. Exempt until they are converted. -->
+        <NoWarn>$(NoWarn);CA1305</NoWarn>
 
         <Title>Melville.CSJ2K</Title>
         <PackageDescription>Read Jpeg 2000 files.  This is a fork of https://github.com/cinderblocks/CoreJ2K</PackageDescription>

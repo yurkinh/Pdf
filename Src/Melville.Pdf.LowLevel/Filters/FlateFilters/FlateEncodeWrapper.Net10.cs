@@ -1,4 +1,7 @@
-﻿using System;
+// .NET 10 fallback: FlateEncoder/FlateDecoder use DeflateEncoder/DeflateDecoder, which are .NET 11 APIs.
+// This is the stream-based codec they replaced upstream; it is compiled only for net10.0.
+#if !NET11_0_OR_GREATER
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.IO.Pipelines;
@@ -33,6 +36,8 @@ internal sealed class FlateEncodeWrapper: DefaultBaseStream
         state = State.WritePrefix;
         adler = new ReadAdlerStream(source);
         reverser = new Pipe();
+        // Output is valid zlib but not byte-identical to DeflateEncoder on .NET 11, so the two tests that compare
+        // exact encoded bytes (FlateDecode.EncodingTestAsync, FileWriterTest.RefStreamContentsAsync) fail on net10.0.
         deflator = new DeflateStream(reverser.Writer.AsStream(), CompressionLevel.Optimal);
         InitiateCopyProcess();
         compressedSource = reverser.Reader.AsStream();
@@ -102,3 +107,4 @@ internal sealed class FlateEncodeWrapper: DefaultBaseStream
         span[1] = 0xDA;
     }
 }
+#endif

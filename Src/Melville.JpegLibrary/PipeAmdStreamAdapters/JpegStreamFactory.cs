@@ -50,25 +50,15 @@ public readonly partial struct JpegStreamFactory
         decoder.SetInput(input);
         decoder.Identify();
         var bufferLength = decoder.Width * decoder.Height * decoder.NumberOfComponents;
-        // The returned stream reads this buffer and returns it to the pool when disposed, so it must not be
-        // returned here as well: that hands the same array to another renter while it is still being read.
-        var output = new PooledBuffer<byte>(bufferLength);
-        try
-        {
-            var outputWriter =
-                new JpegBufferOutputWriter8Bit(
-                    decoder.Width, decoder.Height, decoder.NumberOfComponents, output.AsMemory());
-            decoder.SetOutputWriter(outputWriter);
-            decoder.Decode();
+        var output = ArrayPool<byte>.Shared.Rent(bufferLength);
+        var outputWriter =
+            new JpegBufferOutputWriter8Bit(
+                decoder.Width, decoder.Height, decoder.NumberOfComponents, output.AsMemory());
+        decoder.SetOutputWriter(outputWriter);
+        decoder.Decode();
 
-            DoDecode(decoder, output, bufferLength);
-            return new StraightCopyStream(output, bufferLength);
-        }
-        catch
-        {
-            output.Dispose();
-            throw;
-        }
+        DoDecode(decoder, output, bufferLength);
+        return new StraightCopyStream(output, bufferLength);
 
     }
     private void DoDecode(JpegDecoder decoder, byte[] output, int bufferLength)

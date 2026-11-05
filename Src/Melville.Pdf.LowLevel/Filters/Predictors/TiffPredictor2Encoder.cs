@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Melville.Parsing.StreamFilters;
+using Melville.Parsing.VariableBitEncoding;
+using Melville.StreamInterfaces.Adapters;
+using Melville.StreamInterfaces.ParsingBuffers;
+using System;
 using System.Buffers;
 using System.Diagnostics;
-using Melville.Parsing.StreamFilters;
-using Melville.Parsing.VariableBitEncoding;
 
 namespace Melville.Pdf.LowLevel.Filters.Predictors;
 
@@ -24,12 +26,11 @@ internal static class ScanLineLengthComputer
 
 internal abstract class TiffPredictor2Filter: IStreamFilterDefinition
 {
-    private int bitsPerColor;
-    private int groupsPerRow;
-    private int[] buffer;
-    private int minBytes;
-    private BitReader reader;
-    private BitWriter writer;
+    private readonly int bitsPerColor;
+    private readonly int groupsPerRow;
+    private readonly int[] buffer;
+    private readonly int minBytes;
+    private readonly BitReader reader = new();
     private int currentCol = 0;
 
     protected TiffPredictor2Filter(int colors, int bitsPerColor, int colorsPerRow)
@@ -38,37 +39,27 @@ internal abstract class TiffPredictor2Filter: IStreamFilterDefinition
         groupsPerRow = ScanLineLengthComputer.ComputeGroupsPerRow(colors, bitsPerColor, colorsPerRow, bitsPerColor);
         minBytes = 2 + ((bitsPerColor + 7) / 8);
         buffer = new int[colors];
-        reader = new BitReader();
-        writer = new BitWriter();
     }
 
-    public int MinWriteSize => minBytes+1;
+    private readonly BitWritingBuffer writer = new();
 
-    public (SequencePosition SourceConsumed, int bytesWritten, bool Done) Convert(ref SequenceReader<byte> source, in Span<byte> destination)
+    public bool Convert(ref SpanParsingBuffer input, ref Span<byte> output)
     {
-        var destPosition = 0;
-        while (destPosition + minBytes < destination.Length && 
-               reader.TryRead(bitsPerColor, ref source, out var readValue))
+        while (writer.TryWriteToMovingBuffer(ref output) &&
+               reader.TryRead(bitsPerColor, ref input, out var readValue))
         {
-            destPosition += writer.WriteBits(
-                ComputeFilterResult(readValue), bitsPerColor, destination[destPosition..]);
+            writer.WriteBits(ComputeFilterResult(readValue), bitsPerColor);
             currentCol++;
             if (currentCol >= groupsPerRow)
             {
                 currentCol = 0;
-                Array.Clear(buffer, 0, buffer.Length);
+                buffer.AsSpan().Clear();
             }
         }
-        return (source.Position, destPosition, false);
+        return false;
     }
-        
-    public (SequencePosition SourceConsumed, int bytesWritten, bool Done) FinalConvert(ref SequenceReader<byte> source,
-        in Span<byte> destination)
-    {
-        if (destination.Length < minBytes) return (source.Position, 0, false);
-        Debug.Assert(!source.TryRead(out _));
-        return (source.Position, writer.FinishWrite(destination), true);
-    }
+
+    public bool FinalConvert(ref SpanParsingBuffer input, ref Span<byte> output) => Convert(ref input, ref output);
 
     private int ComputeFilterResult(int readValue) => ComputeAdjustedValue(readValue, ref buffer[SelectBufferSlot()]);
 

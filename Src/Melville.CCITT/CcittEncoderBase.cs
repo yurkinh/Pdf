@@ -10,7 +10,7 @@ namespace Melville.CCITT;
 internal abstract class CcittEncoderBase : IStreamFilterDefinition
 {
     protected readonly CcittParameters Parameters;
-    private readonly BitWriter bitWriter = new();
+    private readonly BitWritingBuffer bitWriter = new();
     private readonly BitReader bitReader = new();
     private LinePair lines;
     private int currentReadPos;
@@ -22,14 +22,16 @@ internal abstract class CcittEncoderBase : IStreamFilterDefinition
         lines = new LinePair(parameters);
     }
 
-    public int MinWriteSize => 10;
-
-    public bool Convert(ref SpanParsingBuffer input, ref Span<byte> output)
+    public bool FinalConvert(ref SpanParsingBuffer input, ref Span<byte> output) =>
+        Convert(ref input, ref output, true);
+    public bool Convert(ref SpanParsingBuffer input, ref Span<byte> output) =>
+        Convert(ref input, ref output, false);
+    bool Convert(ref SpanParsingBuffer input, ref Span<byte> output, bool doneReading)
     {
-        if (input.CurrentLength == 0)
+        if (input.CurrentLength == 0 && doneReading)
         {
-            if (bitWriter.FinishWrite(output) is > 0 and var delta)
-                output = output[delta..];
+            bitWriter.AdvanceToWholeByte();
+            bitWriter.TryWriteToMovingBuffer(ref output);
             return true;
         }
 
