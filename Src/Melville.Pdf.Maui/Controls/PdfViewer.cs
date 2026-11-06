@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using System.ComponentModel;
 using System.Globalization;
 using Melville.Pdf.LowLevel.Parsing.ParserContext;
@@ -61,6 +62,15 @@ public partial class PdfViewer : ContentView
     public static readonly BindableProperty ShowToolbarProperty = BindableProperty.Create(
         nameof(ShowToolbar), typeof(bool), typeof(PdfViewer), true);
 
+    /// <summary>
+    /// The page, zoom and scroll position, two-way. The viewer updates it as the user moves around, so a host can
+    /// save it (for example when the window is stopped). Setting it moves the viewer there; set it before
+    /// <see cref="Source"/> to open the next document at a saved position. Null when no document is open.
+    /// </summary>
+    public static readonly BindableProperty ViewStateProperty = BindableProperty.Create(
+        nameof(ViewState), typeof(PdfViewState?), typeof(PdfViewer), null, BindingMode.TwoWay,
+        propertyChanged: (b, _, n) => ((PdfViewer)b).OnViewStateSet((PdfViewState?)n));
+
     /// <inheritdoc cref="SourceProperty"/>
     public PdfSource? Source { get => (PdfSource?)GetValue(SourceProperty); set => SetValue(SourceProperty, value); }
 
@@ -89,6 +99,33 @@ public partial class PdfViewer : ContentView
     /// <inheritdoc cref="ShowToolbarProperty"/>
     public bool ShowToolbar { get => (bool)GetValue(ShowToolbarProperty); set => SetValue(ShowToolbarProperty, value); }
 
+    /// <inheritdoc cref="ViewStateProperty"/>
+    public PdfViewState? ViewState { get => (PdfViewState?)GetValue(ViewStateProperty); set => SetValue(ViewStateProperty, value); }
+
+    /// <summary>Go to the first page. Like the other commands, for menus and keyboard shortcuts.</summary>
+    public ICommand FirstPageCommand { get; }
+
+    /// <summary>Go to the previous page.</summary>
+    public ICommand PreviousPageCommand { get; }
+
+    /// <summary>Go to the next page.</summary>
+    public ICommand NextPageCommand { get; }
+
+    /// <summary>Go to the last page.</summary>
+    public ICommand LastPageCommand { get; }
+
+    /// <summary>Zoom in one step around the centre.</summary>
+    public ICommand ZoomInCommand { get; }
+
+    /// <summary>Zoom out one step around the centre.</summary>
+    public ICommand ZoomOutCommand { get; }
+
+    /// <summary>Show the whole page.</summary>
+    public ICommand FitPageCommand { get; }
+
+    /// <summary>Fit the page to the width.</summary>
+    public ICommand FitWidthCommand { get; }
+
     /// <summary>Raised on the UI thread when a document has opened and its first page is shown.</summary>
     public event EventHandler? DocumentLoaded;
 
@@ -107,12 +144,25 @@ public partial class PdfViewer : ContentView
     private CancellationTokenSource? loading;
     private int bitmapVersion;
     private Window? window;
+    private readonly List<ForwardingCommand> commands = [];
+    private bool updatingViewState;     // the viewer, not the host, is setting ViewState
+    private PdfViewState? requestedViewState; // set by the host; applied when the next document opens
 
     /// <summary>Create a viewer with no document.</summary>
     public PdfViewer()
     {
+        FirstPageCommand = Forward(vm => vm.PageSelector.ToStartCommand);
+        PreviousPageCommand = Forward(vm => vm.PageSelector.DecrementCommand);
+        NextPageCommand = Forward(vm => vm.PageSelector.IncrementCommand);
+        LastPageCommand = Forward(vm => vm.PageSelector.ToEndCommand);
+        ZoomInCommand = Forward(vm => vm.ZoomInCommand);
+        ZoomOutCommand = Forward(vm => vm.ZoomOutCommand);
+        FitPageCommand = Forward(vm => vm.FitPageCommand);
+        FitWidthCommand = Forward(vm => vm.FitWidthCommand);
+
         pageView = new GraphicsView { Drawable = drawable, AutomationId = "PdfViewer.Page" };
         SemanticProperties.SetDescription(pageView, "No document");
+        SemanticProperties.SetHint(pageView, "Pinch or use the zoom buttons to zoom, drag to scroll");
         pageView.SizeChanged += (_, _) => viewModel?.SetViewport(pageView.Width, pageView.Height);
         AddGestures(pageView);
         pageView.HandlerChanged += (_, _) => AttachPlatformGestures(pageView);
@@ -150,6 +200,9 @@ public partial class PdfViewer : ContentView
     {
         error.Text = message;
         error.IsVisible = message is not null;
+        if (message is null) return;
+        SemanticScreenReader.Default.Announce(message);
+        error.SetSemanticFocus();
     }
 
     private static Color BackgroundFor(AppTheme theme) =>
@@ -164,6 +217,7 @@ public partial class PdfViewer : ContentView
 
         IsLoading = true;
         ErrorMessage = null;
+        SemanticScreenReader.Default.Announce("Opening document");
         try
         {
             var fonts = Handler?.MauiContext?.Services.GetService<IDefaultFontMapper>() ?? SelfContainedDefaultFonts.Instance;
@@ -187,6 +241,8 @@ public partial class PdfViewer : ContentView
                 return;
             }
             ShowDocument(opened);
+            SemanticScreenReader.Default.Announce(
+                opened.PageCount == 1 ? "Document opened, 1 page" : $"Document opened, {opened.PageCount} pages");
             DocumentLoaded?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -194,6 +250,7 @@ public partial class PdfViewer : ContentView
         }
         catch (Exception e)
         {
+            requestedViewState = null; // it was meant for this document
             ErrorMessage = $"This document could not be opened: {e.Message}";
             LoadFailed?.Invoke(this, e);
         }
@@ -207,14 +264,23 @@ public partial class PdfViewer : ContentView
     {
         viewModel = opened;
         body.BindingContext = opened;
-        // A custom zoom belongs to the document it was chosen for; a new document starts fitted.
+        // A custom zoom belongs to the document it was chosen for; a new document starts fitted, unless the host
+        // asked for a saved position.
         if (ZoomMode == ZoomMode.Custom) ZoomMode = ZoomMode.FitPage;
         opened.ZoomMode = ZoomMode;
         opened.PropertyChanged += OnViewModelChanged;
         opened.PageSelector.PropertyChanged += OnPageSelectorChanged;
         PageCount = opened.PageCount;
-        PageNumber = opened.PageSelector.Page;
         opened.SetViewport(pageView.Width, pageView.Height);
+        if (requestedViewState is { } requested)
+        {
+            requestedViewState = null;
+            opened.Restore(requested);
+            ZoomMode = opened.ZoomMode;
+        }
+        PageNumber = opened.PageSelector.Page;
+        PublishViewState();
+        foreach (var command in commands) command.Retarget();
         UpdatePage();
     }
 
@@ -226,6 +292,10 @@ public partial class PdfViewer : ContentView
         old.PageSelector.PropertyChanged -= OnPageSelectorChanged;
         body.BindingContext = null;
         PageCount = 0;
+        foreach (var command in commands) command.Retarget();
+        updatingViewState = true;
+        ViewState = null;
+        updatingViewState = false;
         ReplaceBitmap(null);
         drawable.Page = null;
         pageView.Invalidate();
@@ -246,6 +316,9 @@ public partial class PdfViewer : ContentView
             case nameof(ViewModel.ZoomMode):
                 Dispatcher.Dispatch(() => { if (viewModel is { } vm) ZoomMode = vm.ZoomMode; });
                 break;
+            case nameof(ViewModel.ViewState):
+                Dispatcher.Dispatch(PublishViewState);
+                break;
         }
     }
 
@@ -260,6 +333,71 @@ public partial class PdfViewer : ContentView
             SemanticProperties.SetDescription(pageView, description);
             SemanticScreenReader.Default.Announce(description);
         });
+    }
+
+    private void PublishViewState()
+    {
+        if (viewModel is not { } vm) return;
+        updatingViewState = true;
+        try { ViewState = vm.ViewState; }
+        finally { updatingViewState = false; }
+    }
+
+    private void OnViewStateSet(PdfViewState? state)
+    {
+        if (updatingViewState || state is not { } requested) return;
+        if (viewModel is { } vm && !IsLoading)
+        {
+            vm.Restore(requested);
+            ZoomMode = vm.ZoomMode;
+        }
+        else
+        {
+            requestedViewState = requested; // applied by ShowDocument
+        }
+    }
+
+    private ForwardingCommand Forward(Func<ViewModel, ICommand> target)
+    {
+        var command = new ForwardingCommand(() => viewModel is { } vm ? target(vm) : null, Dispatcher);
+        commands.Add(command);
+        return command;
+    }
+
+    /// <summary>
+    /// A stable command (for the toolbar and the host) that runs the open document's command, if any. It raises
+    /// CanExecuteChanged on the UI thread: the view model raises it from whatever thread changed a property, often the
+    /// render thread, and a Button that updates IsEnabled there throws on Android ("Only the original thread that
+    /// created a view hierarchy can touch its views").
+    /// </summary>
+    private sealed class ForwardingCommand(Func<ICommand?> target, IDispatcher dispatcher) : ICommand
+    {
+        private ICommand? current;
+
+        public event EventHandler? CanExecuteChanged;
+
+        public bool CanExecute(object? parameter) => current?.CanExecute(parameter) ?? false;
+
+        public void Execute(object? parameter)
+        {
+            if (CanExecute(parameter)) current!.Execute(parameter);
+        }
+
+        public void Retarget()
+        {
+            if (current is not null) current.CanExecuteChanged -= OnTargetChanged;
+            current = target();
+            if (current is not null) current.CanExecuteChanged += OnTargetChanged;
+            Raise();
+        }
+
+        private void OnTargetChanged(object? sender, EventArgs e)
+        {
+            if (dispatcher.IsDispatchRequired) dispatcher.Dispatch(Raise);
+            else Raise();
+        }
+
+        private void Raise() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnPageNumberChanged(int page)
@@ -322,6 +460,7 @@ public partial class PdfViewer : ContentView
         if (window is null) return;
         window.Stopped += OnWindowStopped;
         window.Resumed += OnWindowResumed;
+        window.Destroying += OnWindowDestroying;
         ScheduleBitmap();
     }
 
@@ -331,6 +470,7 @@ public partial class PdfViewer : ContentView
         {
             window.Stopped -= OnWindowStopped;
             window.Resumed -= OnWindowResumed;
+            window.Destroying -= OnWindowDestroying;
         }
         window = null;
         ReplaceBitmap(null);
@@ -339,6 +479,14 @@ public partial class PdfViewer : ContentView
     private void OnWindowStopped(object? sender, EventArgs e) => ReplaceBitmap(null);
 
     private void OnWindowResumed(object? sender, EventArgs e) => ScheduleBitmap();
+
+    // The window is going away (closed on desktop, or the Android activity finishing): release the document now
+    // rather than when the control is collected. Hosts save ViewState before this, in their own Destroying handler.
+    private async void OnWindowDestroying(object? sender, EventArgs e)
+    {
+        Interlocked.Exchange(ref loading, null)?.Cancel();
+        await CloseDocumentAsync();
+    }
 
     // ---- Gestures ---------------------------------------------------------------------------------------------
 
@@ -398,7 +546,8 @@ public partial class PdfViewer : ContentView
         {
             var button = new Button
             {
-                Text = text, Padding = new Thickness(10, 4), MinimumWidthRequest = 40,
+                // 44 x 44: the smallest comfortable touch target (Apple HIG; Android asks for 48dp).
+                Text = text, Padding = new Thickness(10, 4), MinimumWidthRequest = 44, MinimumHeightRequest = 44,
                 AutomationId = "PdfViewer." + description.Replace(" ", ""),
             };
             SemanticProperties.SetDescription(button, description);
@@ -406,36 +555,45 @@ public partial class PdfViewer : ContentView
         }
 
         var first = MakeButton("|<", "First page");
-        first.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.PageSelector.ToStartCommand);
+        first.Command = FirstPageCommand;
         var previous = MakeButton("<", "Previous page");
-        previous.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.PageSelector.DecrementCommand);
+        previous.Command = PreviousPageCommand;
         var next = MakeButton(">", "Next page");
-        next.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.PageSelector.IncrementCommand);
+        next.Command = NextPageCommand;
         var last = MakeButton(">|", "Last page");
-        last.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.PageSelector.ToEndCommand);
+        last.Command = LastPageCommand;
 
         var page = new Entry
         {
-            Keyboard = Keyboard.Numeric, WidthRequest = 56, HorizontalTextAlignment = TextAlignment.Center,
-            AutomationId = "PdfViewer.PageNumber",
+            // Minimum, not fixed, width so large accessibility text sizes still fit.
+            Keyboard = Keyboard.Numeric, MinimumWidthRequest = 56, MinimumHeightRequest = 44,
+            HorizontalTextAlignment = TextAlignment.Center, AutomationId = "PdfViewer.PageNumber",
         };
+        // A hint rather than a description or placeholder: Description breaks TalkBack's edit action on Android,
+        // and Placeholder would compete with Hint for the same Android attribute.
+        SemanticProperties.SetHint(page, "Page number. Type a page to go to it");
         page.SetBinding(Entry.TextProperty, static (ViewModel vm) => vm.PageSelector.Page, BindingMode.TwoWay,
             converter: IntTextConverter.Instance);
         var count = new Label { VerticalOptions = LayoutOptions.Center };
         count.SetBinding(Label.TextProperty, static (ViewModel vm) => vm.PageCount, stringFormat: "of {0}");
 
         var zoomOut = MakeButton("−", "Zoom out");
-        zoomOut.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.ZoomOutCommand);
+        zoomOut.Command = ZoomOutCommand;
         var zoomIn = MakeButton("+", "Zoom in");
-        zoomIn.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.ZoomInCommand);
+        zoomIn.Command = ZoomInCommand;
         var fitPage = MakeButton("Fit", "Fit page");
-        fitPage.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.FitPageCommand);
+        fitPage.Command = FitPageCommand;
         var fitWidth = MakeButton("Width", "Fit width");
-        fitWidth.SetBinding(Button.CommandProperty, static (ViewModel vm) => vm.FitWidthCommand);
+        fitWidth.Command = FitWidthCommand;
 
         var layers = MakeButton("Layers", "Show layers");
         layers.SetBinding(IsVisibleProperty, static (ViewModel vm) => vm.Layers, converter: NotEmptyConverter.Instance);
-        layers.Clicked += (_, _) => layersPanel.IsVisible = !layersPanel.IsVisible;
+        layers.Clicked += (_, _) =>
+        {
+            layersPanel.IsVisible = !layersPanel.IsVisible;
+            SemanticProperties.SetDescription(layers, layersPanel.IsVisible ? "Hide layers" : "Show layers");
+            SemanticScreenReader.Default.Announce(layersPanel.IsVisible ? "Layers shown" : "Layers hidden");
+        };
 
         return new FlexLayout
         {
@@ -460,8 +618,15 @@ public partial class PdfViewer : ContentView
                 var check = new CheckBox { VerticalOptions = LayoutOptions.Center };
                 check.SetBinding(CheckBox.IsCheckedProperty, static (LayerRow row) => row.Visible, BindingMode.TwoWay);
                 check.SetBinding(IsVisibleProperty, static (LayerRow row) => row.ShowCheck);
-                var name = new Label { VerticalOptions = LayoutOptions.Center };
+                // The check box carries the layer name for screen readers; the label beside it is visual only, and
+                // tapping it toggles the layer too (a bigger target than the box).
+                check.SetBinding(SemanticProperties.DescriptionProperty, static (LayerRow row) => row.Name);
+                var name = new Label { VerticalOptions = LayoutOptions.Center, MinimumHeightRequest = 44, VerticalTextAlignment = TextAlignment.Center };
                 name.SetBinding(Label.TextProperty, static (LayerRow row) => row.Name);
+                AutomationProperties.SetIsInAccessibleTree(name, false);
+                var toggle = new TapGestureRecognizer();
+                toggle.Tapped += (_, _) => { if (name.BindingContext is LayerRow { ShowCheck: true } row) row.Visible = !row.Visible; };
+                name.GestureRecognizers.Add(toggle);
                 var row = new HorizontalStackLayout { Spacing = 4, Children = { check, name } };
                 row.SetBinding(PaddingProperty, static (LayerRow r) => r.Depth, converter: DepthToIndentConverter.Instance);
                 return row;

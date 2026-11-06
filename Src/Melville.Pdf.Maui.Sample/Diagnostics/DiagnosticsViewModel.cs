@@ -63,7 +63,22 @@ public sealed class DiagnosticsViewModel : ObservableObject
         }
     }
 
-    public string Status { get => status; private set => Set(ref status, value); }
+    /// <summary>What the page is doing; announced to screen readers when it changes.</summary>
+    public string Status
+    {
+        get => status;
+        private set
+        {
+            if (Set(ref status, value)) SemanticScreenReader.Default.Announce(value);
+        }
+    }
+
+    // Progress is shown but not announced: one announcement per document would drown the screen reader.
+    private void SetProgress(string text)
+    {
+        status = text;
+        OnPropertyChanged(nameof(Status));
+    }
 
     public ObservableCollection<Measurement> Results { get; } = [];
 
@@ -185,7 +200,7 @@ public sealed class DiagnosticsViewModel : ObservableObject
         for (int i = 0; i < all.Count; i++)
         {
             var document = all[i];
-            Status = $"Smoke test {i + 1} of {all.Count}: {document.Title}";
+            SetProgress($"Smoke test {i + 1} of {all.Count}: {document.Title}");
             var result = await Task.Run(() => RecordEveryPageAsync(document));
             pages += result.Pages;
             if (result.Error is null) continue;

@@ -21,6 +21,8 @@ public static class MauiProgram
 
 		builder.UseMelvillePdf();
 		builder.Services.AddSingleton<Documents.DocumentCatalog>();
+		builder.Services.AddSingleton(Preferences.Default);
+		builder.Services.AddSingleton<Documents.ReadingPositions>();
 		builder.Services.AddTransient<Library.LibraryPage>();
 		builder.Services.AddTransient<Library.LibraryViewModel>();
 		builder.Services.AddTransient<Gallery.GalleryPage>();

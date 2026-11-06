@@ -238,4 +238,88 @@ public class PdfViewerViewModelPanZoomTest
         after.X.Should().BeApproximately(centre.X, 1e-9);
         after.Y.Should().BeApproximately(centre.Y, 1e-9);
     }
+
+    // CreateAsync sets a 306x396 viewport; pages are 612x792 points, so fit page is scale 0.5.
+
+    [Fact]
+    public async Task ViewStateReportsPageZoomAndScrollInPagePoints()
+    {
+        await using var sut = await CreateAsync();
+        sut.ZoomAt(4, 0, 0);     // fit scale 0.5 x 4 = 2
+        sut.PanBy(-100, -60);    // scrolled 100x60 viewport units = 50x30 page points
+
+        sut.ViewState.Should().Be(new PdfViewState(1, ZoomMode.Custom, 2, 50, 30));
+    }
+
+    [Fact]
+    public async Task RestoreGoesToThePageZoomAndScroll()
+    {
+        await using var sut = await CreateAsync();
+
+        sut.Restore(new PdfViewState(3, ZoomMode.Custom, 2, 50, 30));
+        await sut.WaitUntilAsync(() => sut.CurrentPage?.Content.Number == 3 && !sut.IsRendering);
+
+        sut.PageSelector.Page.Should().Be(3);
+        sut.ZoomMode.Should().Be(ZoomMode.Custom);
+        sut.Layout.Scale.Should().Be(2);
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((100, 60));
+        sut.ViewState.Should().Be(new PdfViewState(3, ZoomMode.Custom, 2, 50, 30));
+    }
+
+    [Fact]
+    public async Task RestoreOnTheCurrentPageAppliesAtOnce()
+    {
+        await using var sut = await CreateAsync();
+        sut.SetViewport(306, 200); // fit width is scale 0.5, and the 396-unit-tall page scrolls
+
+        sut.Restore(new PdfViewState(1, ZoomMode.FitWidth, 0, 0, 100));
+
+        sut.ZoomMode.Should().Be(ZoomMode.FitWidth);
+        sut.Layout.Scale.Should().Be(0.5);
+        sut.Layout.ScrollY.Should().Be(50, "page y 100 at scale 0.5");
+    }
+
+    [Fact]
+    public async Task RestoreClampsThePageAndTheScroll()
+    {
+        await using var sut = await CreateAsync();
+
+        sut.Restore(new PdfViewState(99, ZoomMode.Custom, 1, 10_000, 10_000));
+        await sut.WaitUntilAsync(() => sut.CurrentPage?.Content.Number == 3 && !sut.IsRendering);
+
+        sut.PageSelector.Page.Should().Be(3);
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((sut.Layout.MaxScrollX, sut.Layout.MaxScrollY));
+    }
+
+    [Fact]
+    public async Task ViewStateDuringAPendingRestoreIsTheRestoredState()
+    {
+        await using var sut = await CreateAsync();
+        renderer.Hold(2);
+        var saved = new PdfViewState(2, ZoomMode.Custom, 2, 50, 30);
+
+        sut.Restore(saved);
+
+        sut.ViewState.Should().Be(saved, "saving again before page 2 arrives must not lose the restore");
+        renderer.Release(2);
+        await sut.WaitUntilAsync(() => sut.CurrentPage?.Content.Number == 2 && !sut.IsRendering);
+        sut.ViewState.Should().Be(saved);
+    }
+
+    [Fact]
+    public async Task ResizingWhileTheNextPageRendersKeepsTheOldPagesScroll()
+    {
+        await using var sut = await CreateAsync();
+        sut.ZoomAt(4, 0, 0);
+        sut.PanBy(-100, -60);
+        renderer.Hold(2);
+
+        sut.PageSelector.Page = 2;
+        sut.SetViewport(306, 390); // page 1 is still on screen
+
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((100, 60));
+        renderer.Release(2);
+        await sut.WaitUntilAsync(() => sut.CurrentPage?.Content.Number == 2 && !sut.IsRendering);
+        (sut.Layout.ScrollX, sut.Layout.ScrollY).Should().Be((0, 0), "the new page starts at the top-left");
+    }
 }

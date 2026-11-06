@@ -13,7 +13,7 @@
             <Grid ColumnDefinitions="Auto,80,*" ColumnSpacing="8">
                 <Label Text="Page" VerticalOptions="Center" />
                 <Entry Grid.Column="1" Text="{Binding PageText}" Keyboard="Numeric" AutomationId="Diagnostics.Page"
-                       SemanticProperties.Description="Page to measure" />
+                       SemanticProperties.Hint="Page to measure" />
             </Grid>
             <HorizontalStackLayout Spacing="8">
                 <Button Text="Measure page" AutomationId="Diagnostics.Measure" Command="{Binding MeasureCommand}" />
@@ -21,7 +21,8 @@
                         SemanticProperties.Hint="Records every page of every document and lists failures" />
             </HorizontalStackLayout>
             <ActivityIndicator IsRunning="{Binding IsRunning}" IsVisible="{Binding IsRunning}" />
-            <Label Text="{Binding Status}" AutomationId="Diagnostics.Status" FontAttributes="Bold" />
+            <Label Text="{Binding Status}" AutomationId="Diagnostics.Status" FontAttributes="Bold"
+                   SemanticProperties.HeadingLevel="Level2" />
 
             <VerticalStackLayout BindableLayout.ItemsSource="{Binding Results}" Spacing="4">
                 <BindableLayout.ItemTemplate>
@@ -35,8 +36,8 @@
             </VerticalStackLayout>
 
             <Grid ColumnDefinitions="*,*" ColumnSpacing="8" RowDefinitions="Auto,Auto">
-                <Label Text="Maui.Graphics (native canvas)" FontSize="13" />
-                <Label Grid.Column="1" Text="SkiaSharp renderer" FontSize="13" />
+                <Label Text="Maui.Graphics (native canvas)" FontSize="13" SemanticProperties.HeadingLevel="Level2" />
+                <Label Grid.Column="1" Text="SkiaSharp renderer" FontSize="13" SemanticProperties.HeadingLevel="Level2" />
                 <Border Grid.Row="1" Stroke="{StaticResource Gray300}" BackgroundColor="White">
                     <Image Source="{Binding NativeImage}" Aspect="AspectFit"
                            SemanticProperties.Description="Page drawn by the Maui.Graphics renderer" />

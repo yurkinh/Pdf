@@ -110,6 +110,31 @@ Checked on Mac Catalyst through DevFlow: Library, Gallery filter and open, encry
 - **DevFlow**: `ui tap` does not trigger CollectionView selection, so rows use a `TapGestureRecognizer` command. Tapping by `--text` hits the label, which has no handler, so the script taps the row (the label's parent). Each separate CLI call can hit the session lock, so one long-lived `maui devflow batch` process is driven from a script.
 - **Not done**: CJK samples (the CJK font library is 468 MB), "Open in…" document types on iOS/Android, packaged MSIX on Windows (still unpackaged; no Windows machine). CI builds the sample but runs no device tests.
 
+## Phase 7 results (lifecycle and accessibility)
+
+**Lifecycle.**
+- `PdfViewer.ViewState` is a two-way `PdfViewState` (page, zoom mode, zoom, scroll). The scroll is stored as the page point at the viewport's top-left corner, so it survives another viewport size or zoom. Setting it before `Source` opens the next document at that position.
+- The viewer frees its bitmap when the window stops and closes the document when the window is destroyed.
+- The sample saves the position per document, in `Preferences`. It saves when the window stops or is destroyed (Android's back button can skip Stopped), and when the user leaves the viewer, which also closes the document. The Library offers "Continue reading …".
+- Checked on Mac Catalyst: leave and continue restores page and zoom; restarting the app restores a fit-width scroll position.
+- Checked on Android: Home, then force-stop, then relaunch restores the page.
+
+**Accessibility.**
+- Opening, opened (with the page count) and errors are announced. Errors also take semantic focus.
+- Layer check boxes are named after their layer. The label beside each box is kept out of the accessibility tree, and tapping it toggles the layer.
+- The page-number entry has a hint rather than a description, which would break TalkBack's edit action.
+- Toolbar targets are at least 44 × 44. The page entry has a minimum width, not a fixed one.
+- In the sample, rows read title and description. The SearchBar and Entry descriptions were removed, for the same TalkBack reason. Diagnostics announces only its final results.
+- Desktop menu bar (Mac Catalyst, Windows) with keyboard shortcuts: ⌘←/→ for previous/next page, ⌘↑/↓ for first/last, ⌘= and ⌘− to zoom, ⌘0 for fit page, ⌘9 for fit width. These use the new public `PdfViewer` commands.
+- Checked with the Android accessibility tree (`uiautomator dump`) and DevFlow. Not yet tried with a real screen reader (TalkBack, VoiceOver, Narrator).
+
+**Bug found (from phase 5).** The view model raises `CanExecuteChanged` from the render thread. Toolbar buttons bound directly to its commands then updated `IsEnabled` off the UI thread. On Android that throws ("Only the original thread that created a view hierarchy can touch its views"), and the message showed as a render error on the layers document. The toolbar and the host now use forwarding commands that raise `CanExecuteChanged` on the UI thread.
+
+**Not done.**
+- There is no text alternative for page content, so a screen reader only hears "Page X of Y". Melville.Pdf has a text extractor; using it would be a later feature.
+- Memory-pressure events (iOS memory warning, Android trim) are not handled; the viewer only frees memory on Stopped.
+- Windows has not been tested (no machine).
+
 ## Merge of upstream main (2026-11-05)
 
 - **JPEG pooled buffer**: fixed upstream (the decoded stream now owns the rented array). We took upstream's `JpegStreamFactory` and kept our `RentedArrayReadingStream` hardening: reads stop at the decoded length, and the array is returned at most once.

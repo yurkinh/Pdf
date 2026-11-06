@@ -36,6 +36,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private double scrollX;
     private double scrollY;
     private int layoutPageNumber;
+    private int renderedPageNumber;
+    private PdfViewState? pendingRestore;
     private PageLayout layout;
 
     private PdfViewerViewModel(DocumentRenderer document, IPageRenderer<TPage> renderer)
@@ -129,7 +131,41 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     public PageLayout Layout
     {
         get => layout;
-        private set => Set(ref layout, value);
+        private set
+        {
+            if (Set(ref layout, value)) OnPropertyChanged(nameof(ViewState));
+        }
+    }
+
+    /// <summary>
+    /// The page, zoom and scroll position, for saving. Changes (raising PropertyChanged) whenever any of them do;
+    /// while a <see cref="Restore"/> is waiting for its page to render, this is the state being restored.
+    /// </summary>
+    public PdfViewState ViewState
+    {
+        get
+        {
+            if (pendingRestore is { } pending) return pending;
+            var scale = layout.Scale > 0 ? layout.Scale : customScale;
+            return new PdfViewState(pageSelector.Page, zoomMode, zoomMode == ZoomMode.Custom ? customScale : scale,
+                layout.Scale > 0 ? layout.ScrollX / layout.Scale : 0, layout.Scale > 0 ? layout.ScrollY / layout.Scale : 0);
+        }
+    }
+
+    /// <summary>
+    /// Go back to a saved <see cref="ViewState"/>: its page (clamped to the document), zoom and scroll position.
+    /// The scroll position is applied once that page has rendered, and is clamped to the page as usual.
+    /// </summary>
+    public void Restore(PdfViewState state)
+    {
+        var page = Math.Clamp(state.Page, pageSelector.MinPage, pageSelector.MaxPage);
+        pendingRestore = state with { Page = page };
+        customScale = Math.Clamp(state.Zoom > 0 ? state.Zoom : 1, MinScale, MaxScale);
+        zoomMode = state.ZoomMode;
+        OnPropertyChanged(nameof(CustomScale));
+        OnPropertyChanged(nameof(ZoomMode));
+        if (pageSelector.Page != page) pageSelector.Page = page; // renders it; the layout follows the render
+        else UpdateLayout();
     }
 
     /// <summary>
@@ -209,6 +245,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
                 return;
             }
             // Pages that were published are not disposed here: the view may still be drawing the old one.
+            renderedPageNumber = pageNumber;
             CurrentPage = page;
             RenderError = null;
         }
@@ -235,7 +272,11 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
 
     private void OnPageSelectorChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PageSelectorViewModel.Page)) _ = RenderCurrentPageAsync();
+        if (e.PropertyName != nameof(PageSelectorViewModel.Page)) return;
+        // A restore waiting for another page is abandoned when the user picks a page themselves.
+        if (pendingRestore is { } pending && pending.Page != pageSelector.Page) pendingRestore = null;
+        OnPropertyChanged(nameof(ViewState));
+        _ = RenderCurrentPageAsync();
     }
 
     private void OnSelectedContentChanged(object? sender, EventArgs e) => _ = RenderCurrentPageAsync();
@@ -263,11 +304,18 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
             Layout = default;
             return;
         }
-        // A newly shown page starts at its top-left corner.
-        if (pageSelector.Page != layoutPageNumber)
+        // A newly shown page starts at its top-left corner. This is the page that rendered, not the one selected:
+        // until the new page arrives, the old one is still on screen and keeps its scroll position.
+        if (renderedPageNumber != layoutPageNumber)
         {
-            layoutPageNumber = pageSelector.Page;
+            layoutPageNumber = renderedPageNumber;
             scrollX = scrollY = 0;
+        }
+        if (pendingRestore is { } restore && restore.Page == renderedPageNumber && viewportWidth > 0 && viewportHeight > 0)
+        {
+            pendingRestore = null;
+            var scale = PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, zoomMode, customScale).Scale;
+            (scrollX, scrollY) = (restore.PageX * scale, restore.PageY * scale);
         }
         var computed = PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height,
             zoomMode, customScale, scrollX, scrollY);
@@ -294,6 +342,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
 
     /// <inheritdoc />
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
