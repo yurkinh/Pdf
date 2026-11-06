@@ -110,6 +110,10 @@ Checked on Mac Catalyst through DevFlow: Library, Gallery filter and open, encry
 - **DevFlow**: `ui tap` does not trigger CollectionView selection, so rows use a `TapGestureRecognizer` command. Tapping by `--text` hits the label, which has no handler, so the script taps the row (the label's parent). Each separate CLI call can hit the session lock, so one long-lived `maui devflow batch` process is driven from a script.
 - **Not done**: CJK samples (the CJK font library is 468 MB), "Open in…" document types on iOS/Android, packaged MSIX on Windows (still unpackaged; no Windows machine). CI builds the sample but runs no device tests.
 
+## Phase 11b: the MAUI plugin moved to its own repository
+
+The .NET MAUI control, its sample, the TestApp, the sample corpus (tool and test), packaging and the Native AOT gate now live in **Plugin.Maui.PDFViewer** (`../Plugin.Maui.PDFViewer`, created from the [jfversluis/Plugin.Maui.Feature](https://github.com/jfversluis/Plugin.Maui.Feature) template). It uses this fork as the submodule `external/Pdf`. The paths in the phase notes below refer to where things were at the time.
+
 ## Phase 11 results (continuous scroll)
 
 **What it does.** `PdfView.DisplayMode="Continuous"` shows every page in one scrolling strip, vertical or horizontal (`ScrollOrientation`). The toolbar has a Scroll/Pages toggle. `SinglePage` stays the default.
