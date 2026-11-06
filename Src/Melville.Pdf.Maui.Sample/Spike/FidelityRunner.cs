@@ -30,7 +30,7 @@ public static class FidelityRunner
         var buckets = new int[5]; // 0%, <0.5%, <2%, <10%, >=10%
         var failures = 0;
         var watch = Stopwatch.StartNew();
-        foreach (var generator in GeneratorFactory.AllGenerators.OrderBy(g => g.Prefix, StringComparer.Ordinal))
+        foreach (var generator in KnownGenerators.All.OrderBy(g => g.Prefix, StringComparer.Ordinal))
         {
             string result;
             try

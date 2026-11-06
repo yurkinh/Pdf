@@ -44,7 +44,7 @@ public sealed class DocumentCatalog
         (await GetSamplesAsync()).FirstOrDefault(d => d.Key == key) ?? References.FirstOrDefault(d => d.Key == key);
 
     /// <summary>All reference documents, by name.</summary>
-    public IReadOnlyList<CatalogDocument> References { get; } = GeneratorFactory.AllGenerators
+    public IReadOnlyList<CatalogDocument> References { get; } = KnownGenerators.All
         .OrderBy(g => g.Prefix, StringComparer.Ordinal)
         .Select(FromGenerator)
         .ToList();

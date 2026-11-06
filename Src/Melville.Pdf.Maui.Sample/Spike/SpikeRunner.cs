@@ -32,10 +32,7 @@ public static class SpikeRunner
         {
             var type = probe.Canvas.GetType();
             var chain = type.FullName + " : " + type.BaseType?.FullName;
-            var fields = string.Join(", ", type.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
-                .Select(f => $"{f.Name}:{f.FieldType.Name}"));
             lines.Add(new("Export context canvas type", chain));
-            lines.Add(new("Export context canvas fields", fields));
         }
         lines.AddRange(CanvasChecks.Run(rasterizer).Select(r => new SpikeLine(r.Question, r.Answer)));
 #if ANDROID
@@ -53,7 +50,7 @@ public static class SpikeRunner
     {
         var lines = new List<SpikeLine> { new("Runtime", $"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, {DeviceInfo.Platform} {DeviceInfo.VersionString}") };
         byte[]? firstPng = null;
-        var generators = GeneratorFactory.AllGenerators.ToDictionary(g => g.Prefix);
+        var generators = KnownGenerators.All.ToDictionary(g => g.Prefix);
         foreach (var name in Documents)
         {
             try

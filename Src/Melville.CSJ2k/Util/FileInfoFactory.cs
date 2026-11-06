@@ -17,7 +17,8 @@ namespace CoreJ2K.Util
 
         static FileInfoFactory()
         {
-            _creator = J2kSetup.GetSinglePlatformInstance<IFileInfoCreator>();
+            // Explicit, not found by reflection over the assembly: trimming would remove a type found that way.
+            _creator = new DotnetFileInfoCreator();
         }
 
         #endregion

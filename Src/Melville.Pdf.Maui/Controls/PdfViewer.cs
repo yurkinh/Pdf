@@ -296,7 +296,7 @@ public partial class PdfViewer : ContentView
         updatingViewState = true;
         ViewState = null;
         updatingViewState = false;
-        ReplaceBitmap(null);
+        ClearBitmaps();
         drawable.Page = null;
         pageView.Invalidate();
         await old.DisposeAsync();
@@ -409,51 +409,80 @@ public partial class PdfViewer : ContentView
     {
         if (viewModel is not { } vm) return;
         var page = vm.CurrentPage?.Content;
-        if (!ReferenceEquals(drawable.Page, page)) ReplaceBitmap(null);
+        var newPage = !ReferenceEquals(drawable.Page, page);
+        if (newPage)
+        {
+            ClearBitmaps();
+            drawable.ReplayWithoutBitmap = false;
+        }
         drawable.Page = page;
         drawable.Layout = vm.Layout;
         SemanticProperties.SetDescription(pageView, $"Page {vm.PageSelector.Page} of {vm.PageCount}");
         pageView.Invalidate();
-        ScheduleBitmap();
+        // A new page is blank until its bitmap exists, so start at once; zoom and pan changes wait for a pause.
+        ScheduleBitmap(immediate: newPage);
     }
 
     // ---- Bitmap cache -----------------------------------------------------------------------------------------
 
-    private async void ScheduleBitmap()
+    private async void ScheduleBitmap(bool immediate = false)
     {
         var version = ++bitmapVersion;
-        await Task.Delay(TimeSpan.FromMilliseconds(BitmapDelayMs));
+        if (!immediate) await Task.Delay(TimeSpan.FromMilliseconds(BitmapDelayMs));
+        else await Task.Yield(); // let the layout settle (viewport size) before planning
         if (version != bitmapVersion || window is null || drawable.Page is not { } page) return;
-        var scale = drawable.Layout.Scale;
-        if (drawable.Bitmap is { } current && ReferenceEquals(current.Page, page) && current.Scale == scale) return;
 
-        var density = DeviceDisplay.Current.MainDisplayInfo.Density;
-        PageBitmap? bitmap = null;
+        var layout = drawable.Layout;
+        var density = DeviceDisplay.Current.MainDisplayInfo.Density is > 0 and var d ? d : 1;
+        var plan = BitmapPlan.Compute(page.PageWidth, page.PageHeight, layout, pageView.Width, pageView.Height,
+            density, PageBitmap.MaxPixels);
+        if (plan.BackdropScale <= 0) return;
+        var visible = BitmapPlan.Visible(page.PageWidth, page.PageHeight, layout, pageView.Width, pageView.Height);
+        var keepBackdrop = drawable.Backdrop is { } backdrop && ReferenceEquals(backdrop.Page, page) &&
+                           backdrop.Scale == plan.BackdropScale;
+        var keepDetail = plan.Detail is null
+            ? drawable.Detail is null
+            : drawable.Detail is { } detail && ReferenceEquals(detail.Page, page) && detail.Scale == plan.Scale &&
+              detail.Region.Contains(visible);
+        if (keepBackdrop && keepDetail) return;
+
+        PageBitmap? newBackdrop = null, newDetail = null;
         try
         {
-            bitmap = await Task.Run(() => PageBitmap.Create(page, scale, density > 0 ? density : 1));
+            (newBackdrop, newDetail) = await Task.Run(() => (
+                keepBackdrop ? null : PageBitmap.Create(page, plan.BackdropScale, density),
+                keepDetail || plan.Detail is not { } region ? null : PageBitmap.Create(page, plan.Scale, density, region)));
         }
         catch (Exception)
         {
-            // Out of memory or a platform failure: keep drawing from the display list.
+            // Out of memory or a platform failure: keep what is cached, and draw from the display list without one.
+            drawable.ReplayWithoutBitmap = true;
         }
         if (version != bitmapVersion || !ReferenceEquals(drawable.Page, page))
         {
-            bitmap?.Dispose();
+            newBackdrop?.Dispose();
+            newDetail?.Dispose();
             return;
         }
-        ReplaceBitmap(bitmap);
+        if (!keepBackdrop) Replace(drawable.Backdrop, newBackdrop, b => drawable.Backdrop = b);
+        if (!keepDetail) Replace(drawable.Detail, newDetail, b => drawable.Detail = b);
         pageView.Invalidate();
     }
 
-    private void ReplaceBitmap(PageBitmap? bitmap)
+    // Safe to dispose at once: drawing also happens on this (UI) thread.
+    private static void Replace(PageBitmap? old, PageBitmap? replacement, Action<PageBitmap?> set)
     {
-        var old = drawable.Bitmap;
-        drawable.Bitmap = bitmap;
-        old?.Dispose(); // safe: drawing also happens on this (UI) thread
+        set(replacement);
+        if (!ReferenceEquals(old, replacement)) old?.Dispose();
     }
 
-    // Free the bitmap while the app is in the background; it is rebuilt when the window is resumed.
+    private void ClearBitmaps()
+    {
+        Replace(drawable.Backdrop, null, b => drawable.Backdrop = b);
+        Replace(drawable.Detail, null, b => drawable.Detail = b);
+    }
+
+    // Free the bitmaps while the app is in the background; they are rebuilt when the window is resumed.
     private void OnLoaded(object? sender, EventArgs e)
     {
         window = Window;
@@ -461,7 +490,7 @@ public partial class PdfViewer : ContentView
         window.Stopped += OnWindowStopped;
         window.Resumed += OnWindowResumed;
         window.Destroying += OnWindowDestroying;
-        ScheduleBitmap();
+        ScheduleBitmap(immediate: true);
     }
 
     private void OnUnloaded(object? sender, EventArgs e)
@@ -473,12 +502,12 @@ public partial class PdfViewer : ContentView
             window.Destroying -= OnWindowDestroying;
         }
         window = null;
-        ReplaceBitmap(null);
+        ClearBitmaps();
     }
 
-    private void OnWindowStopped(object? sender, EventArgs e) => ReplaceBitmap(null);
+    private void OnWindowStopped(object? sender, EventArgs e) => ClearBitmaps();
 
-    private void OnWindowResumed(object? sender, EventArgs e) => ScheduleBitmap();
+    private void OnWindowResumed(object? sender, EventArgs e) => ScheduleBitmap(immediate: true);
 
     // The window is going away (closed on desktop, or the Android activity finishing): release the document now
     // rather than when the control is collected. Hosts save ViewState before this, in their own Destroying handler.
@@ -572,8 +601,12 @@ public partial class PdfViewer : ContentView
         // A hint rather than a description or placeholder: Description breaks TalkBack's edit action on Android,
         // and Placeholder would compete with Hint for the same Android attribute.
         SemanticProperties.SetHint(page, "Page number. Type a page to go to it");
-        page.SetBinding(Entry.TextProperty, static (ViewModel vm) => vm.PageSelector.Page, BindingMode.TwoWay,
+        // One way, committed on Enter or when focus leaves: a two-way binding would jump to page 1 while "12" is
+        // typed, and its converter needs Binding.DoNothing, which is not trim-safe.
+        page.SetBinding(Entry.TextProperty, static (ViewModel vm) => vm.PageSelector.Page, BindingMode.OneWay,
             converter: IntTextConverter.Instance);
+        page.Completed += (_, _) => CommitPageEntry(page);
+        page.Unfocused += (_, _) => CommitPageEntry(page);
         var count = new Label { VerticalOptions = LayoutOptions.Center };
         count.SetBinding(Label.TextProperty, static (ViewModel vm) => vm.PageCount, stringFormat: "of {0}");
 
@@ -603,6 +636,14 @@ public partial class PdfViewer : ContentView
             Padding = new Thickness(4),
             Children = { first, previous, page, count, next, last, zoomOut, zoomIn, fitPage, fitWidth, layers },
         };
+    }
+
+    // Go to the typed page (clamped by the page selector); anything else puts the current page back.
+    private void CommitPageEntry(Entry entry)
+    {
+        if (viewModel is not { } vm) return;
+        if (int.TryParse(entry.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var typed)) vm.PageSelector.Page = typed;
+        entry.Text = vm.PageSelector.Page.ToString(CultureInfo.CurrentCulture);
     }
 
     private Border layersPanel = null!;
@@ -665,6 +706,6 @@ public partial class PdfViewer : ContentView
         public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
             value is int i ? i.ToString(CultureInfo.CurrentCulture) : "";
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-            int.TryParse(value as string, NumberStyles.Integer, CultureInfo.CurrentCulture, out var i) ? i : Binding.DoNothing;
+            throw new NotSupportedException();
     }
 }

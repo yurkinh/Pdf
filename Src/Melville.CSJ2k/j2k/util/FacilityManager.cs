@@ -66,7 +66,8 @@ namespace CoreJ2K.j2k.util
 
         static FacilityManager()
         {
-            _defMsgLogger = J2kSetup.GetSinglePlatformInstance<IMsgLogger>();
+            // No concrete logger lives in this assembly (StreamMsgLogger is abstract); set DefaultMsgLogger to log.
+            _defMsgLogger = null;
         }
 
         #endregion

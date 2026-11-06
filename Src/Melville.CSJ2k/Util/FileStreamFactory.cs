@@ -18,7 +18,8 @@ namespace CoreJ2K.Util
 
         static FileStreamFactory()
         {
-            _creator = J2kSetup.GetSinglePlatformInstance<IFileStreamCreator>();
+            // Explicit, not found by reflection over the assembly: trimming would remove a type found that way.
+            _creator = new DotnetFileStreamCreator();
         }
 
         #endregion

@@ -26,7 +26,9 @@ public sealed record Measurement(string Name, string Value);
 public sealed class DiagnosticsViewModel : ObservableObject
 {
     private const int RenderWidth = 800;
-    private const int Replays = 5;
+    // MELVILLE_REPLAYS raises the count, to sample a profiler over a long replay loop.
+    private static readonly int Replays =
+        int.TryParse(Environment.GetEnvironmentVariable("MELVILLE_REPLAYS"), System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 1 ? n : 5;
 
     private readonly DocumentCatalog catalog;
     private IReadOnlyList<CatalogDocument> documents;
@@ -142,19 +144,22 @@ public sealed class DiagnosticsViewModel : ObservableObject
         var watch = Stopwatch.StartNew();
         var bytes = await Task.Run(() => ReadAllAsync(document));
         using var renderer = await Task.Run(() => OpenAsync(bytes, document.Password));
-        Add("Open", $"{watch.Elapsed.TotalMilliseconds:F0} ms ({bytes.Length / 1024.0:F0} KB, {renderer.TotalPages} pages)");
+        var openMs = watch.Elapsed.TotalMilliseconds;
+        Add("Open", $"{openMs:F0} ms ({bytes.Length / 1024.0:F0} KB, {renderer.TotalPages} pages)");
 
         var page = int.TryParse(PageText, out var p) ? Math.Clamp(p, 1, renderer.TotalPages) : 1;
-        PageText = page.ToString();
+        PageText = page.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
         watch.Restart();
         var list = await Task.Run(() => RenderWithMauiGraphics.RecordPageAsync(renderer, page).AsTask());
+        var recordMs = watch.Elapsed.TotalMilliseconds;
         Add($"Record page {page}", $"{watch.Elapsed.TotalMilliseconds:F1} ms ({list.Count} operations, {list.FillCount} fills, {list.ImageCount} images)");
 
         // Replay on the UI thread, where the viewer replays.
         var height = (int)(list.PageHeight * (RenderWidth / list.PageWidth));
-        var (first, average, png) = ReplayNative(list, RenderWidth, height);
+        var (first, average, bitmapDraw, png) = ReplayNative(list, RenderWidth, height);
         Add($"Replay {RenderWidth}×{height} px", $"first {first:F1} ms, then {average:F1} ms average of {Replays - 1}");
+        Add("Draw cached bitmap (a frame)", $"{bitmapDraw:F2} ms");
         NativeImage = ImageSource.FromStream(() => new MemoryStream(png));
 
         watch.Restart();
@@ -171,10 +176,44 @@ public sealed class DiagnosticsViewModel : ObservableObject
 
         Add("Managed heap", $"{GC.GetTotalMemory(false) / 1048576.0:F1} MB");
         Add("Process working set", $"{Environment.WorkingSet / 1048576.0:F1} MB");
+        // One machine-readable line per measurement (tab separated), for collecting device numbers.
+        Console.WriteLine(FormattableString.Invariant(
+            $"[BENCH]\t{document.Title}\tp{page}\topen {openMs:F1}\trecord {recordMs:F1}\treplay-first {first:F1}\treplay {average:F1}\tbitmap {bitmapDraw:F2}\tskia {skiaPng.Elapsed.TotalMilliseconds:F1}\tws {Environment.WorkingSet / 1048576.0:F0}MB"));
         Status = $"{document.Title}, page {page} of {renderer.TotalPages}";
     }
 
-    private static (double First, double Average, byte[] Png) ReplayNative(PdfDisplayList list, int width, int height)
+    // Documents measured by AutoRunAsync: text, images of each codec, a pattern, a shading and a very large page.
+    private static readonly (string Title, int Page)[] BenchmarkSet =
+    [
+        ("Long text document", 3), ("JPEG image", 1), ("JPEG 2000 image", 1), ("JBIG2 scan", 1),
+        ("CCITT fax scan", 1), ("Tiling pattern", 1), ("Radial shading", 1), ("Very large page", 1),
+    ];
+
+    /// <summary>
+    /// Unattended run for builds without DevFlow (Release, AOT): measure <see cref="BenchmarkSet"/> twice (the first
+    /// pass includes JIT and first-use costs), then the smoke test. Writes [BENCH], [SMOKE] and [AUTORUN] lines.
+    /// </summary>
+    public async Task AutoRunAsync()
+    {
+        await LoadAsync();
+        Console.WriteLine($"[AUTORUN] start {DeviceInfo.Platform} {DeviceInfo.Model} {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}" +
+                          $" dynamic-code={System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported}");
+        for (int pass = 1; pass <= 2; pass++)
+        {
+            Console.WriteLine($"[AUTORUN] pass {pass}");
+            foreach (var (title, page) in BenchmarkSet)
+            {
+                Selected = Documents.FirstOrDefault(d => d.Title == title);
+                if (Selected is null) { Console.WriteLine($"[AUTORUN] missing {title}"); continue; }
+                PageText = page.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                await RunAsync(MeasureAsync);
+            }
+        }
+        await RunAsync(SmokeTestAsync);
+        Console.WriteLine("[AUTORUN] done");
+    }
+
+    private static (double First, double Average, double BitmapDraw, byte[] Png) ReplayNative(PdfDisplayList list, int width, int height)
     {
         using var context = new PlatformBitmapExportService().CreateContext(width, height, 1);
         var scale = width / list.PageWidth;
@@ -187,9 +226,18 @@ public sealed class DiagnosticsViewModel : ObservableObject
             PdfPageDrawing.Draw(list, context.Canvas, scale);
             times[i] = watch.Elapsed.TotalMilliseconds;
         }
+        // What a frame costs when the viewer draws its cached bitmap instead of replaying (pan, zoom, settled).
+        using var frame = new PlatformBitmapExportService().CreateContext(width, height, 1);
+        var bitmapTimes = new double[Replays];
+        for (int i = 0; i < Replays; i++)
+        {
+            var watch = Stopwatch.StartNew();
+            frame.Canvas.DrawImage(context.Image, 0, 0, width, height);
+            bitmapTimes[i] = watch.Elapsed.TotalMilliseconds;
+        }
         using var png = new MemoryStream();
         context.Image.Save(png, ImageFormat.Png);
-        return (times[0], times.Skip(1).Average(), png.ToArray());
+        return (times[0], times.Skip(1).Average(), bitmapTimes.Skip(1).Average(), png.ToArray());
     }
 
     private async Task SmokeTestAsync()

@@ -25,8 +25,9 @@ internal static class StackTraceClipper
 
     private static string PrintFrame(StackFrame i)
     {
-        var method = i.GetMethod();
+        // DiagnosticMethodInfo, not GetMethod(): it survives trimming (GetMethod needs reflection metadata).
+        var method = DiagnosticMethodInfo.Create(i);
         if (method is null) return "No Method";
-        return $"{method.DeclaringType}.{method.Name}";
+        return $"{method.DeclaringTypeName}.{method.Name}";
     }
 }

@@ -11,44 +11,44 @@
     <!-- Desktop (Mac Catalyst, Windows) menu bar: keyboard shortcuts for keyboard-only users. -->
     <ContentPage.MenuBarItems>
         <MenuBarItem Text="Go">
-            <MenuFlyoutItem Text="First page" Command="{Binding FirstPageCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="First page" Command="{Binding FirstPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Up" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Previous page" Command="{Binding PreviousPageCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Previous page" Command="{Binding PreviousPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Left" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Next page" Command="{Binding NextPageCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Next page" Command="{Binding NextPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Right" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Last page" Command="{Binding LastPageCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Last page" Command="{Binding LastPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Down" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
         </MenuBarItem>
         <MenuBarItem Text="Zoom">
-            <MenuFlyoutItem Text="Zoom in" Command="{Binding ZoomInCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Zoom in" Command="{Binding ZoomInCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="=" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Zoom out" Command="{Binding ZoomOutCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Zoom out" Command="{Binding ZoomOutCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="-" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Fit page" Command="{Binding FitPageCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Fit page" Command="{Binding FitPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="0" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="Fit width" Command="{Binding FitWidthCommand, Source={x:Reference Viewer}}">
+            <MenuFlyoutItem Text="Fit width" Command="{Binding FitWidthCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfViewer}">
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="9" Modifiers="Cmd" />
                 </MenuFlyoutItem.KeyboardAccelerators>

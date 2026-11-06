@@ -108,3 +108,13 @@ jobs:
             if [[ $tfm == *-ios ]]; then extra="-p:RuntimeIdentifier=iossimulator-arm64"; fi
             dotnet build Melville.Pdf.Maui.Sample/Melville.Pdf.Maui.Sample.csproj -c Release -f $tfm $extra
           done
+
+      # Phase 8 gate: Native AOT with full trimming must publish without trim/AOT (IL) warnings.
+      - name: Native AOT publish (Mac Catalyst), no IL warnings
+        if: runner.os == 'macOS'
+        working-directory: Src
+        shell: bash
+        run: |
+          dotnet publish Melville.Pdf.Maui.Sample/Melville.Pdf.Maui.Sample.csproj -f net10.0-maccatalyst -c Release \
+            -p:RuntimeIdentifier=maccatalyst-arm64 -p:MelvilleNativeAot=true -p:CreatePackage=false | tee aot.log
+          if grep -E "warning IL[0-9]+" aot.log; then echo "::error::trim/AOT warnings"; exit 1; fi

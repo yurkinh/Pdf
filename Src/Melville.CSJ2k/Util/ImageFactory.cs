@@ -17,7 +17,8 @@ namespace CoreJ2K.Util
 
         static ImageFactory()
         {
-            _creator = J2kSetup.GetDefaultPlatformInstance<IImageCreator>();
+            // No image creator lives in this assembly; Melville.Pdf.LowLevel registers one (RawImageCreator).
+            _creator = null;
         }
 
         #endregion

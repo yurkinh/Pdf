@@ -13,6 +13,12 @@ public partial class DiagnosticsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        if (AutoRun.Requested)
+        {
+            AutoRun.Requested = false; // once per launch
+            await viewModel.AutoRunAsync();
+            return;
+        }
         await viewModel.LoadAsync();
     }
 }
