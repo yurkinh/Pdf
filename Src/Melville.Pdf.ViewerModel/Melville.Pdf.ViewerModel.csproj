@@ -11,6 +11,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Melville.Pdf.Model\Melville.Pdf.Model.csproj" />
+        <ProjectReference Include="..\Melville.Pdf.TextExtractor\Melville.Pdf.TextExtractor.csproj" />
     </ItemGroup>
 
 </Project>

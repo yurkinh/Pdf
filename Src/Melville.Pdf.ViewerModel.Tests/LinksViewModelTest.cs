@@ -98,3 +98,33 @@ public class LinksViewModelTest
         sut.ViewState.PageY.Should().BeApproximately(0, 0.01);
     }
 }
+
+/// <summary>The page text, through the view model (the layer itself is tested in Melville.Pdf.DataModelTests).</summary>
+public class TextViewModelTest
+{
+    [Fact]
+    public async Task PageTextIsReadAndKept()
+    {
+        await using var sut = await PdfViewerViewModel<FakePage>.CreateAsync(
+            await TestDocuments.FromGeneratorAsync("-Links"), new FakePageRenderer());
+
+        var text = await sut.GetTextAsync(3);
+
+        text.Text.Should().StartWith("Page 3\nBack to page 1");
+        (await sut.GetTextAsync(3)).Should().BeSameAs(text);
+        (await sut.GetTextAsync(99)).Text.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OnlyRecentPagesAreKept()
+    {
+        await using var sut = await PdfViewerViewModel<FakePage>.CreateAsync(
+            await TestDocuments.WithTextAsync(20), new FakePageRenderer());
+        var first = await sut.GetTextAsync(1);
+
+        for (int page = 2; page <= 20; page++) await sut.GetTextAsync(page);
+
+        (await sut.GetTextAsync(1)).Should().NotBeSameAs(first, "page 1 was the least recently used of 20");
+        (await sut.GetTextAsync(20)).Should().BeSameAs(await sut.GetTextAsync(20));
+    }
+}

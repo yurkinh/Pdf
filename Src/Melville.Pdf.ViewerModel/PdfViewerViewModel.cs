@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Melville.Pdf.LowLevel.Model.Wrappers;
 using Melville.Pdf.Model.Documents;
 using Melville.Pdf.Model.OptionalContent;
+using Melville.Pdf.TextExtractor;
 using Melville.Pdf.Model.Renderers.DocumentRenderers;
 
 namespace Melville.Pdf.ViewerModel;
@@ -681,6 +682,50 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         double x1 = ToPageX(box, area.Left), x2 = ToPageX(box, area.Right);
         double y1 = ToPageY(box, area.Top), y2 = ToPageY(box, area.Bottom);
         return new PageRect(Math.Min(x1, x2), Math.Min(y1, y2), Math.Abs(x2 - x1), Math.Abs(y2 - y1));
+    }
+
+    // ---- Text ---------------------------------------------------------------------------------------------------
+
+    private const int CachedTextPages = 16;
+    private readonly Dictionary<int, PageText> texts = [];
+    private readonly LinkedList<int> textUse = []; // most recently used first
+
+    /// <summary>
+    /// The text of a page with every glyph's position, in page points from its top-left corner (the coordinates
+    /// of <see cref="PageLayout.ToPage"/> and <see cref="PageLink"/>). The most recently used pages are kept.
+    /// Reading waits for a render in progress, because the document is not read from two threads at once.
+    /// </summary>
+    public async Task<PageText> GetTextAsync(int page)
+    {
+        lock (texts)
+            if (texts.TryGetValue(page, out var known))
+            {
+                textUse.Remove(page);
+                textUse.AddFirst(page);
+                return known;
+            }
+        if (page < 1 || page > document.TotalPages) return PageText.Empty;
+        PageText text;
+        await renderGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed) return PageText.Empty;
+            text = await document.PageTextLayerAsync(page).ConfigureAwait(false);
+        }
+        finally
+        {
+            renderGate.Release();
+        }
+        lock (texts)
+        {
+            if (texts.TryAdd(page, text)) textUse.AddFirst(page);
+            while (textUse.Count > CachedTextPages)
+            {
+                texts.Remove(textUse.Last!.Value);
+                textUse.RemoveLast();
+            }
+        }
+        return text;
     }
 
     /// <summary>

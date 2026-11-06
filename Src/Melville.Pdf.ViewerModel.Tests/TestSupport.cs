@@ -78,6 +78,27 @@ public static class TestDocuments
         return await new PdfReader(SelfContainedDefaultFonts.Instance).ReadFromAsync(bytes.ToArray());
     }
 
+    /// <summary>Pages that each say "Page n" in Helvetica.</summary>
+    public static async Task<DocumentRenderer> WithTextAsync(int pages)
+    {
+        var builder = new PdfDocumentCreator();
+        builder.Pages.AddStandardFont("F1"u8, BuiltInFontName.Helvetica, FontEncodingName.WinAnsiEncoding);
+        for (int i = 1; i <= pages; i++)
+        {
+            var number = i;
+            await builder.Pages.CreatePage().AddToContentStreamAsync(async csw =>
+            {
+                using var block = csw.StartTextBlock();
+                await csw.SetFontAsync(PdfDirectObject.CreateName("F1"), 12);
+                block.MovePositionBy(72, 720);
+                await block.ShowStringAsync($"Page {number}");
+            });
+        }
+        using var bytes = new MemoryStream();
+        await builder.CreateDocument().WriteToAsync(bytes);
+        return await new PdfReader(SelfContainedDefaultFonts.Instance).ReadFromAsync(bytes.ToArray());
+    }
+
     /// <summary>One page with two optional content groups listed in the default configuration's /Order.</summary>
     public static async Task<DocumentRenderer> WithLayersAsync()
     {
