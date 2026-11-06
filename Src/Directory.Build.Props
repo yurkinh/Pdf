@@ -30,8 +30,11 @@
 		<InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
 	</ItemGroup>
 
-	<!-- -p:MelvilleSkipCopyPackage=true when packing elsewhere (pack-nuget.sh): the copy expects the default output path. -->
-	<Target Name="CopyPackage" AfterTargets="Pack" Condition="'$(MelvilleSkipCopyPackage)' != 'true'">
+	<!-- -p:MelvilleSkipCopyPackage=true when packing elsewhere (pack-nuget.sh): the copy expects the default output path.
+	     Builds that consume these projects from source (Plugin.Maui.PDFViewer, CI) pack to another path, so the copy is
+	     skipped when there is no package to copy. -->
+	<Target Name="CopyPackage" AfterTargets="Pack"
+	        Condition="'$(MelvilleSkipCopyPackage)' != 'true' And Exists('$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg')">
 		<Copy SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg"
 		      DestinationFolder="$(SolutionDir)..\..\TempNuget\" />
 	</Target>
