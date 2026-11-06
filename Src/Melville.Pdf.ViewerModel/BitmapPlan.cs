@@ -9,6 +9,9 @@ public readonly record struct PageRect(double X, double Y, double Width, double 
     /// <summary>Y + Height.</summary>
     public double Bottom => Y + Height;
 
+    /// <summary>Whether the point (<paramref name="x"/>, <paramref name="y"/>) lies inside this rectangle, edges included.</summary>
+    public bool Contains(double x, double y) => x >= X && y >= Y && x <= Right && y <= Bottom;
+
     /// <summary>Whether <paramref name="other"/> lies entirely inside this rectangle.</summary>
     public bool Contains(PageRect other) =>
         other.X >= X && other.Y >= Y && other.Right <= Right && other.Bottom <= Bottom;

@@ -1,4 +1,7 @@
-﻿using System.Threading.Tasks;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
+using Melville.StreamInterfaces;
+using Melville.Pdf.LowLevel.Model.Objects;
 using Melville.Pdf.Model.Documents;
 using Melville.Pdf.Model.OptionalContent;
 using Melville.Pdf.Model.Renderers.DocumentPartCaches;
@@ -19,4 +22,19 @@ internal class PageTreeDocumentRenderer : DocumentRenderer
 
     protected override ValueTask<HasRenderableContentStream> GetPageContentAsync(int oneBasedPageNumber) =>
         tree.GetPageAsync(oneBasedPageNumber);
+
+    // Page dictionaries are loaded once per document, so the same page is always the same instance.
+    private Dictionary<PdfDictionary, int>? pageNumbers;
+
+    internal override async ValueTask<int> PageNumberOfAsync(PdfDictionary page)
+    {
+        if (pageNumbers is null)
+        {
+            var numbers = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
+            int number = 0;
+            await foreach (var each in tree.CA()) numbers.TryAdd(each.LowLevel, ++number);
+            pageNumbers = numbers;
+        }
+        return pageNumbers.GetValueOrDefault(page);
+    }
 }

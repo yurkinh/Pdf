@@ -1,4 +1,6 @@
-﻿using Melville.Pdf.Model.Documents;
+﻿using System.Threading.Tasks;
+using Melville.Pdf.LowLevel.Model.Objects;
+using Melville.Pdf.Model.Documents;
 using Melville.Pdf.Model.OptionalContent;
 using Melville.Pdf.Model.Renderers.DocumentPartCaches;
 using Melville.Pdf.Model.Renderers.FontRenderings.DefaultFonts;
@@ -14,6 +16,9 @@ internal class OwnedPageTreeDocumentRenderer : PageTreeDocumentRenderer
     {
         this.document = document;
     }
+
+    internal override ValueTask<PdfDirectObject> NamedDestinationAsync(PdfDirectObject name) =>
+        document.NamedDestinationAsync(name);
 
     public override void Dispose()
     {

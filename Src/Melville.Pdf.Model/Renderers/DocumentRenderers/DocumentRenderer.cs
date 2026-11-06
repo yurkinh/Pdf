@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
 
 using Melville.Pdf.LowLevel.Model.ContentStreams;
 using Melville.Pdf.LowLevel.Model.Conventions;
+using Melville.Pdf.LowLevel.Model.Objects;
 using Melville.Pdf.LowLevel.Model.Wrappers;
 using Melville.Pdf.Model.Documents;
 using Melville.Pdf.Model.OptionalContent;
@@ -99,11 +101,37 @@ public abstract class DocumentRenderer : IDisposable
     /// <param name="oneBasedPageNumber">The page to measure.</param>
     public async ValueTask<PdfRect> GetPageBoxAsync(int oneBasedPageNumber)
     {
-        var pageStruct = await GetPageContentAsync(oneBasedPageNumber).CA();
-        var cropRect = await GetCropDimensionsAsync(pageStruct).CA();
-        var rotation = CreateRotateMatrix(cropRect, await pageStruct.GetDefaultRotationAsync().CA());
+        var (rotation, cropRect) = await VisibleBoxTransformAsync(
+            await GetPageContentAsync(oneBasedPageNumber).CA()).CA();
         return cropRect.Transform(rotation);
     }
+
+    /// <summary>
+    /// The links on a page, with their areas in the coordinates of <see cref="GetPageBoxAsync"/>. Links that go
+    /// to a page of this document, to a URI, or to the next, previous, first or last page are read; other kinds
+    /// of link, and links whose destination cannot be found, are left out.
+    /// </summary>
+    /// <param name="oneBasedPageNumber">The page whose links to read.</param>
+    public ValueTask<IReadOnlyList<PdfLink>> GetPageLinksAsync(int oneBasedPageNumber) =>
+        new LinkReader(this).ReadAsync(oneBasedPageNumber);
+
+    internal ValueTask<HasRenderableContentStream> PageAsync(int oneBasedPageNumber) =>
+        GetPageContentAsync(oneBasedPageNumber);
+
+    // The page's crop box, and the rotation that turns it into the box the page is drawn in.
+    internal async ValueTask<(Matrix3x2 Rotation, PdfRect CropBox)> VisibleBoxTransformAsync(
+        HasRenderableContentStream page)
+    {
+        var cropRect = await GetCropDimensionsAsync(page).CA();
+        return (CreateRotateMatrix(cropRect, await page.GetDefaultRotationAsync().CA()), cropRect);
+    }
+
+    /// <summary>The number of a page given its dictionary, or 0 if it is not a page of this document.</summary>
+    internal virtual ValueTask<int> PageNumberOfAsync(PdfDictionary page) => new(0);
+
+    /// <summary>The destination a name (catalog /Dests) or string (the /Dests name tree) stands for, or null.</summary>
+    internal virtual ValueTask<PdfDirectObject> NamedDestinationAsync(PdfDirectObject name) =>
+        new(PdfDirectObject.CreateNull());
 
     private Matrix3x2 CreateRotateMatrix(PdfRect cropRect, long rotateBy)
     {

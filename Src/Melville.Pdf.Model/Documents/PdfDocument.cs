@@ -6,6 +6,7 @@ using Melville.Pdf.LowLevel;
 using Melville.Pdf.LowLevel.Model.Conventions;
 using Melville.Pdf.LowLevel.Model.Document;
 using Melville.Pdf.LowLevel.Model.Objects;
+using Melville.Pdf.LowLevel.Model.Wrappers.Trees;
 using Melville.Pdf.LowLevel.Parsing.ParserContext;
 using Melville.StreamInterfaces;
 
@@ -64,6 +65,32 @@ public readonly struct PdfDocument: IDisposable
     public async ValueTask<PdfDictionary?> OptionalContentPropertiesAsync() =>
         await (await CatalogAsync().CA()).GetOrNullAsync<PdfDictionary>(
             KnownNames.OCProperties).CA();
+
+    /// <summary>
+    /// The destination a name stands for: a name is looked up in the catalog's /Dests dictionary (PDF 1.1), a
+    /// string in the /Dests name tree of the catalog's /Names dictionary. Null when there is no such destination.
+    /// </summary>
+    internal async ValueTask<PdfDirectObject> NamedDestinationAsync(PdfDirectObject name)
+    {
+        var catalog = await CatalogAsync().CA();
+        if (name.IsName)
+            return await catalog.GetOrNullAsync<PdfDictionary>(KnownNames.Dests).CA() is { } dests
+                ? await dests.GetOrNullAsync(name).CA()
+                : PdfDirectObject.CreateNull();
+        if (await catalog.GetOrNullAsync<PdfDictionary>(KnownNames.Names).CA() is { } names &&
+            await names.GetOrNullAsync<PdfDictionary>(KnownNames.Dests).CA() is { } tree)
+        {
+            try
+            {
+                return await new PdfTree(tree).SearchAsync(name).CA();
+            }
+            catch (Exception)
+            {
+                // Not in the tree (the search throws), or a damaged tree.
+            }
+        }
+        return PdfDirectObject.CreateNull();
+    }
 
     /// <inheritdoc />
     public void Dispose()

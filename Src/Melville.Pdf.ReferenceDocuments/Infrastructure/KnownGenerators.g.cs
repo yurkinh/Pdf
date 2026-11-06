@@ -126,6 +126,7 @@ public static class KnownGenerators
         new global::Melville.Pdf.ReferenceDocuments.LowLevel.MinimalPdfParser(),
         new global::Melville.Pdf.ReferenceDocuments.LowLevel.ObjectStreamPage(),
         new global::Melville.Pdf.ReferenceDocuments.PageProperties.CompatibilitySection(),
+        new global::Melville.Pdf.ReferenceDocuments.PageProperties.Links(),
         new global::Melville.Pdf.ReferenceDocuments.PageProperties.OptionalContent.HideOptionalImageOff(),
         new global::Melville.Pdf.ReferenceDocuments.PageProperties.OptionalContent.HideOptionalImageOn(),
         new global::Melville.Pdf.ReferenceDocuments.PageProperties.Rotation.Rotate0(),

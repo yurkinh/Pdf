@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Melville.Pdf.LowLevel.Model.Wrappers;
+using Melville.Pdf.Model.Documents;
 using Melville.Pdf.Model.OptionalContent;
 using Melville.Pdf.Model.Renderers.DocumentRenderers;
 
@@ -46,6 +48,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     // Continuous mode. Guarded by continuousLock: layout updates come from the UI (pan, zoom) and from renders.
     private readonly object continuousLock = new();
     private PageSize[] pageSizes = [];
+    private PdfRect[] pageBoxes = [];
     private DisplayMode displayMode = DisplayMode.SinglePage;
     private ScrollOrientation scrollOrientation = ScrollOrientation.Vertical;
     private ContinuousLayout? continuousLayout;
@@ -93,11 +96,13 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private async Task MeasurePagesAsync()
     {
         var sizes = new PageSize[document.TotalPages];
+        var boxes = new PdfRect[sizes.Length];
         for (int i = 0; i < sizes.Length; i++)
         {
-            var box = await document.GetPageBoxAsync(i + 1).ConfigureAwait(false);
+            var box = boxes[i] = await document.GetPageBoxAsync(i + 1).ConfigureAwait(false);
             sizes[i] = new PageSize(Math.Abs(box.Right - box.Left), Math.Abs(box.Top - box.Bottom));
         }
+        pageBoxes = boxes;
         pageSizes = sizes;
     }
 
@@ -599,6 +604,83 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
             zoomMode, customScale, scrollX, scrollY);
         (scrollX, scrollY) = (computed.ScrollX, computed.ScrollY); // keep the clamped values
         Layout = computed;
+    }
+
+    // ---- Links ------------------------------------------------------------------------------------------------
+
+    private readonly Dictionary<int, IReadOnlyList<PageLink>> links = [];
+
+    /// <summary>
+    /// The links on a page, in page points from its top-left corner (the coordinates of
+    /// <see cref="PageLayout.ToPage"/>). Read once per page; reading waits for a render in progress, because the
+    /// document is not read from two threads at once.
+    /// </summary>
+    public async Task<IReadOnlyList<PageLink>> GetLinksAsync(int page)
+    {
+        lock (links)
+            if (links.TryGetValue(page, out var known)) return known;
+        if (page < 1 || page > pageBoxes.Length) return [];
+        IReadOnlyList<PdfLink> read;
+        await renderGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed) return [];
+            read = await document.GetPageLinksAsync(page).ConfigureAwait(false);
+        }
+        finally
+        {
+            renderGate.Release();
+        }
+        var box = pageBoxes[page - 1];
+        IReadOnlyList<PageLink> result = [.. read.Select(link => new PageLink(ToPageRect(box, link.Area), link.Target))];
+        lock (links) links[page] = result;
+        return result;
+    }
+
+    /// <summary>
+    /// The link under a viewport point, on whichever page is drawn there, or null. When links overlap, the last
+    /// one in the page's annotation list (the one drawn on top) wins.
+    /// </summary>
+    public async Task<PdfLinkTarget?> LinkAtAsync(double viewportX, double viewportY)
+    {
+        foreach (var placement in visiblePages)
+        {
+            var (x, y) = placement.Layout.ToPage(viewportX, viewportY);
+            var size = pageSizes.ElementAtOrDefault(placement.Page - 1);
+            if (x < 0 || y < 0 || x > size.Width || y > size.Height) continue;
+            var onPage = await GetLinksAsync(placement.Page).ConfigureAwait(false);
+            for (int i = onPage.Count - 1; i >= 0; i--)
+                if (onPage[i].Area.Contains(x, y)) return onPage[i].Target;
+            return null;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Show the page a link goes to, at the link's position when it has one, keeping the zoom. A missing
+    /// horizontal position keeps the current one; a missing vertical position shows the top of the page.
+    /// </summary>
+    public void GoTo(PdfPageLinkTarget target)
+    {
+        var page = Math.Clamp(target.OneBasedPageNumber, 1, Math.Max(1, pageBoxes.Length));
+        if (pageBoxes.Length == 0) return;
+        var box = pageBoxes[page - 1];
+        var current = ViewState;
+        var x = target.Left is { } left ? ToPageX(box, left) : current.PageX;
+        var y = target.Top is { } top ? ToPageY(box, top) : 0;
+        Restore(current with { Page = page, PageX = Math.Max(0, x), PageY = Math.Max(0, y) });
+    }
+
+    // PDF coordinates in the page's visible box (y up, corners in either order after a rotation) to page points
+    // from the top-left corner, as the page is drawn (see RenderTargetBase.MapUserSpaceToBitmapSpace).
+    private static double ToPageX(PdfRect box, double x) => (x - box.Left) * Math.Sign(box.Right - box.Left);
+    private static double ToPageY(PdfRect box, double y) => (box.Top - y) * Math.Sign(box.Top - box.Bottom);
+
+    private static PageRect ToPageRect(PdfRect box, PdfRect area)
+    {
+        double x1 = ToPageX(box, area.Left), x2 = ToPageX(box, area.Right);
+        double y1 = ToPageY(box, area.Top), y2 = ToPageY(box, area.Bottom);
+        return new PageRect(Math.Min(x1, x2), Math.Min(y1, y2), Math.Abs(x2 - x1), Math.Abs(y2 - y1));
     }
 
     /// <summary>
