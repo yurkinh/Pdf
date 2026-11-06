@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:pdf="https://github.com/yurkinh/Pdf/maui"
+             xmlns:local="clr-namespace:Plugin.Maui.Pdf.Sample"
+             x:Class="Plugin.Maui.Pdf.Sample.MainPage"
+             x:DataType="local:MainViewModel"
+             Title="PdfView">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Welcome" Command="{Binding OpenWelcomeCommand}" />
+        <ToolbarItem Text="Layers" Command="{Binding OpenLayersCommand}" />
+        <ToolbarItem Text="Open file…" Command="{Binding OpenFileCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="*,Auto">
+        <!-- The whole viewer: toolbar, pinch/pan/double-tap, layers. Set ShowToolbar="False" to bring your own. -->
+        <pdf:PdfView Source="{Binding Source}"
+                     PageNumber="{Binding PageNumber}"
+                     PageCount="{Binding PageCount, Mode=OneWayToSource}" />
+        <Label Grid.Row="1" Text="{Binding Status}" Margin="12,6" FontSize="13" />
+    </Grid>
+</ContentPage>

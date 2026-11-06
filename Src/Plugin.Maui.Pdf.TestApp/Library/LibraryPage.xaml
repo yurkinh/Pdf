@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:library="clr-namespace:Plugin.Maui.Pdf.TestApp.Library"
+             xmlns:documents="clr-namespace:Plugin.Maui.Pdf.TestApp.Documents"
+             x:Class="Plugin.Maui.Pdf.TestApp.Library.LibraryPage"
+             x:DataType="library:LibraryViewModel"
+             Title="Library">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Open file…" AutomationId="Library.OpenFile" Command="{Binding OpenFileCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,*">
+        <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Margin="16,8"
+               TextColor="{AppThemeBinding Light=DarkRed, Dark=#FF8A80}" />
+        <!-- Resume where the user stopped reading, also after the app was closed or killed in the background. -->
+        <Button Grid.Row="1" Margin="16,8" HorizontalOptions="Start" AutomationId="Library.Continue"
+                Text="{Binding ContinueText}" IsVisible="{Binding CanContinue}"
+                Command="{Binding ContinueCommand}" />
+        <CollectionView Grid.Row="2" AutomationId="Library.Documents"
+                        ItemsSource="{Binding Documents}">
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="documents:CatalogDocument">
+                    <VerticalStackLayout Padding="16,10" Spacing="2" MinimumHeightRequest="44"
+                                         SemanticProperties.Description="{Binding AccessibleName}"
+                                         SemanticProperties.Hint="Double-tap to open">
+                        <Label Text="{Binding Title}" FontAttributes="Bold" FontSize="16" />
+                        <Label Text="{Binding Description}" FontSize="13"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenCommand, Source={RelativeSource AncestorType={x:Type library:LibraryViewModel}}}"
+                                                  CommandParameter="{Binding .}" />
+                        </VerticalStackLayout.GestureRecognizers>
+                    </VerticalStackLayout>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,43 @@
+name: Release NuGet packages
+
+# Publishes Plugin.Maui.Pdf (and this fork's Melville.Pdf libraries it depends on) to nuget.org.
+# OFF by default. It runs only when a GitHub release is published AND the repository variable PUBLISH_NUGET is
+# 'true'; it also needs the secret NUGET_API_KEY. Set the versions first (Src/Directory.Build.Props:
+# PluginMauiPdfVersion; pack-nuget.sh: MELVILLE_VERSION).
+#
+# Not usable as is: the Melville.* package IDs on nuget.org belong to the upstream author, so this fork cannot push
+# its builds of them. Before a release, upstream must publish packages Plugin.Maui.Pdf can depend on (net10.0
+# assets), or the libraries need their own IDs, or they must be bundled into the Plugin.Maui.Pdf package.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    if: vars.PUBLISH_NUGET == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: Src/global.json
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workloads
+        run: dotnet workload install maui
+
+      - name: Pack
+        shell: bash
+        run: ./pack-nuget.sh
+
+      - name: Push to nuget.org
+        shell: bash
+        run: |
+          for package in artifacts/nuget/*.nupkg; do
+            dotnet nuget push "$package" --api-key "${{ secrets.NUGET_API_KEY }}" \\
+              --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done

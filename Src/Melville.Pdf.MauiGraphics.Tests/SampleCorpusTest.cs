@@ -11,7 +11,7 @@ using Xunit;
 namespace Melville.Pdf.MauiGraphics.Tests;
 
 /// <summary>
-/// The PDFs bundled with the sample app (Melville.Pdf.Maui.Sample/Resources/Raw/samples, written by
+/// The PDFs bundled with the sample app (Plugin.Maui.Pdf.TestApp/Resources/Raw/samples, written by
 /// tools/BuildSampleCorpus.cs): each one opens with the password its index gives and every page records.
 /// </summary>
 public class SampleCorpusTest(ITestOutputHelper output)
@@ -19,7 +19,7 @@ public class SampleCorpusTest(ITestOutputHelper output)
     public sealed record Entry(string File, string Title, string Description, string? Password);
 
     private static string Folder([CallerFilePath] string here = "") =>
-        Path.Combine(Path.GetDirectoryName(here)!, "..", "Melville.Pdf.Maui.Sample", "Resources", "Raw", "samples");
+        Path.Combine(Path.GetDirectoryName(here)!, "..", "Plugin.Maui.Pdf.TestApp", "Resources", "Raw", "samples");
 
     private static IReadOnlyList<Entry> Index() =>
         JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(Path.Combine(Folder(), "index.json")),

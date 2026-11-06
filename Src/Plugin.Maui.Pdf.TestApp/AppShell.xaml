@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="Plugin.Maui.Pdf.TestApp.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:library="clr-namespace:Plugin.Maui.Pdf.TestApp.Library"
+    xmlns:gallery="clr-namespace:Plugin.Maui.Pdf.TestApp.Gallery"
+    xmlns:diagnostics="clr-namespace:Plugin.Maui.Pdf.TestApp.Diagnostics"
+    xmlns:spike="clr-namespace:Plugin.Maui.Pdf.TestApp.Spike"
+    Title="Melville.Pdf">
+
+    <!-- The viewer is pushed on top of a tab (route "viewer", registered in AppShell.xaml.cs). -->
+    <TabBar>
+        <ShellContent Title="Library" Route="library" ContentTemplate="{DataTemplate library:LibraryPage}" />
+        <ShellContent Title="Gallery" Route="gallery" ContentTemplate="{DataTemplate gallery:GalleryPage}" />
+        <ShellContent Title="Diagnostics" Route="diagnostics" ContentTemplate="{DataTemplate diagnostics:DiagnosticsPage}" />
+        <ShellContent Title="Checks" Route="checks" ContentTemplate="{DataTemplate spike:SpikePage}" />
+    </TabBar>
+
+</Shell>

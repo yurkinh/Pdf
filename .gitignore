@@ -64,3 +64,6 @@ packages/
 # BenchmarkDotNet generated projects
 .bdn/
 BenchmarkDotNet.Artifacts/
+
+# NuGet packages written by pack-nuget.sh
+/artifacts/

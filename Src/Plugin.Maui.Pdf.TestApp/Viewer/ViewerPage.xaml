@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewer="clr-namespace:Plugin.Maui.Pdf.TestApp.Viewer"
+             xmlns:pdf="clr-namespace:Plugin.Maui.Pdf;assembly=Plugin.Maui.Pdf"
+             x:Class="Plugin.Maui.Pdf.TestApp.Viewer.ViewerPage"
+             x:DataType="viewer:ViewerViewModel"
+             Title="{Binding Title}"
+             Shell.TabBarIsVisible="False">
+
+    <!-- Desktop (Mac Catalyst, Windows) menu bar: keyboard shortcuts for keyboard-only users. -->
+    <ContentPage.MenuBarItems>
+        <MenuBarItem Text="Go">
+            <MenuFlyoutItem Text="First page" Command="{Binding FirstPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Up" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Previous page" Command="{Binding PreviousPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Left" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Next page" Command="{Binding NextPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Right" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Last page" Command="{Binding LastPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Down" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+        <MenuBarItem Text="Zoom">
+            <MenuFlyoutItem Text="Zoom in" Command="{Binding ZoomInCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="=" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Zoom out" Command="{Binding ZoomOutCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="-" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Fit page" Command="{Binding FitPageCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="0" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Fit width" Command="{Binding FitWidthCommand, Source={x:Reference Viewer}, x:DataType=pdf:PdfView}">
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="9" Modifiers="Cmd" />
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+    </ContentPage.MenuBarItems>
+
+    <!-- PasswordSource and ViewState before Source: the viewer reads both as soon as the source changes. -->
+    <pdf:PdfView x:Name="Viewer" AutomationId="Viewer.PdfView"
+                   PasswordSource="{Binding PasswordSource}"
+                   ViewState="{Binding ViewState}"
+                   Source="{Binding Source}" />
+</ContentPage>

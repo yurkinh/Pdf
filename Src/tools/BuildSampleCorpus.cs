@@ -1,7 +1,7 @@
 #:project ../Melville.Pdf.ReferenceDocuments/Melville.Pdf.ReferenceDocuments.csproj
 #:property PublishAot=false
 
-// Writes the PDFs bundled with Melville.Pdf.Maui.Sample (Resources/Raw/samples) and their index.json.
+// Writes the PDFs bundled with Plugin.Maui.Pdf.TestApp (Resources/Raw/samples) and their index.json.
 // Every document is generated here or by Melville.Pdf.ReferenceDocuments, so the corpus has no licensing
 // questions. Run from Src:  ./.dotnet/dotnet run tools/BuildSampleCorpus.cs
 //
@@ -21,7 +21,7 @@ using Melville.Pdf.LowLevel.Writers.DocumentWriters;
 using Melville.Pdf.Model.Creators;
 using Melville.Pdf.ReferenceDocuments.Infrastructure;
 
-var output = Path.GetFullPath(args.Length > 0 ? args[0] : "Melville.Pdf.Maui.Sample/Resources/Raw/samples");
+var output = Path.GetFullPath(args.Length > 0 ? args[0] : "Plugin.Maui.Pdf.TestApp/Resources/Raw/samples");
 Directory.CreateDirectory(output);
 var index = new List<Entry>();
 

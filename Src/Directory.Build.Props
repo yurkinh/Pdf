@@ -1,6 +1,11 @@
 ﻿<Project>
     <PropertyGroup>
         <Version>0.6.9-preview</Version>
+        <!-- Packing this fork's libraries for Plugin.Maui.Pdf: -p:MelvilleVersion=0.6.9-maui.1 (see pack-nuget.sh), so
+             they never collide with upstream's packages of the same version, which are net11.0 only. -->
+        <Version Condition="'$(MelvilleVersion)' != ''">$(MelvilleVersion)</Version>
+        <!-- Version of the Plugin.Maui.Pdf package (and what the sample restores with -p:UsePluginPackage=true). -->
+        <PluginMauiPdfVersion Condition="'$(PluginMauiPdfVersion)' == ''">0.1.0-preview.1</PluginMauiPdfVersion>
         <LangVersion>14</LangVersion>
         <Authors>John Melville, MS, MD</Authors>
         <Company>Melville Computing</Company>
@@ -27,7 +32,8 @@
 		<InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
 	</ItemGroup>
 
-	<Target Name="CopyPackage" AfterTargets="Pack">
+	<!-- -p:MelvilleSkipCopyPackage=true when packing elsewhere (pack-nuget.sh): the copy expects the default output path. -->
+	<Target Name="CopyPackage" AfterTargets="Pack" Condition="'$(MelvilleSkipCopyPackage)' != 'true'">
 		<Copy SourceFiles="$(OutputPath)..\$(PackageId).$(PackageVersion).nupkg"
 		      DestinationFolder="$(SolutionDir)..\..\TempNuget\" />
 	</Target>

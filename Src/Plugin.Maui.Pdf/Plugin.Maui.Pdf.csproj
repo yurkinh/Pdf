@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- net10.0 by default; -p:MelvilleMauiTfm=net11.0 builds .NET 11 heads (phase 8 runtime-async gate, phase 10). -->
+		<MelvilleMauiTfm Condition="'$(MelvilleMauiTfm)' == ''">net10.0</MelvilleMauiTfm>
+		<TargetFrameworks>$(MelvilleMauiTfm)-android</TargetFrameworks>
+		<TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('linux'))">$(TargetFrameworks);$(MelvilleMauiTfm)-ios;$(MelvilleMauiTfm)-maccatalyst</TargetFrameworks>
+		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);$(MelvilleMauiTfm)-windows10.0.19041.0</TargetFrameworks>
+
+		<UseMaui>true</UseMaui>
+		<SingleProject>true</SingleProject>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<RootNamespace>Plugin.Maui.Pdf</RootNamespace>
+
+		<!-- NuGet package (Plugin.Maui.* conventions). Packed by pack-nuget.sh; not published. -->
+		<PackageId>Plugin.Maui.Pdf</PackageId>
+		<Version>$(PluginMauiPdfVersion)</Version>
+		<Title>Plugin.Maui.Pdf</Title>
+		<Authors>Yuriy Holembyovskyy</Authors>
+		<Owners>Yuriy Holembyovskyy</Owners>
+		<Copyright>2026 Yuriy Holembyovskyy. Melville.Pdf: 2026 John Melville, MS, MD.</Copyright>
+		<Description>A PDF viewer for .NET MAUI: PdfView shows PDF pages with pinch zoom, pan, double-tap, page navigation, layers and passwords, on Android, iOS, Mac Catalyst and Windows. Pure .NET rendering (Melville.Pdf) drawn with Microsoft.Maui.Graphics; no native PDF libraries. Trim and Native AOT compatible.</Description>
+		<PackageTags>maui;dotnet-maui;pdf;pdf-viewer;pdfview;viewer;android;ios;maccatalyst;windows;plugin</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/yurkinh/Pdf</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/yurkinh/Pdf</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageReleaseNotes>First preview. See README.md.</PackageReleaseNotes>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IsAotCompatible>true</IsAotCompatible>
+
+		<!-- MAUI's package version comes from the installed workload ($(MauiVersion)), so opt out of central versions -->
+		<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+		<!-- See Plugin.Maui.Pdf.Sample: SDK 11.0.100-rc.3's net10.0 Apple packs demand Xcode 26.0 -->
+		<ValidateXcodeVersion Condition="'$(ValidateXcodeVersion)' == ''">false</ValidateXcodeVersion>
+
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">17.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+		<!-- .NET 11 for Android needs API 24 or later. -->
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And $(TargetFramework.StartsWith('net11'))">24.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Melville.Pdf.FontLibrary\Melville.Pdf.FontLibrary.csproj" />
+		<ProjectReference Include="..\Melville.Pdf.MauiGraphics\Melville.Pdf.MauiGraphics.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+
+</Project>

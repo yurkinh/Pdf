@@ -36,4 +36,4 @@ Run these with `--explicit on`. They write their results to `MELVILLE_DUMP_DIR` 
 
 ## On devices
 
-The native backends (CoreGraphics, Android) can't run here. `Melville.Pdf.Maui.Sample` runs the same comparison on a device or simulator at startup and logs `[FIDELITY]` lines, plus a `[FIDELITY-SUMMARY]` line, with side-by-side images for any document above 1%. See `spikes/README.md` for the results so far.
+The native backends (CoreGraphics, Android) can't run here. `Plugin.Maui.Pdf.TestApp` runs the same comparison on a device or simulator at startup and logs `[FIDELITY]` lines, plus a `[FIDELITY-SUMMARY]` line, with side-by-side images for any document above 1%. See `spikes/README.md` for the results so far.
