@@ -15,7 +15,7 @@
 
     <Grid RowDefinitions="*,Auto">
         <!-- The whole viewer: toolbar, pinch/pan/double-tap, layers. Set ShowToolbar="False" to bring your own. -->
-        <pdf:PdfView Source="{Binding Source}"
+        <pdf:PdfView Source="{Binding Source}" DisplayMode="Continuous"
                      PageNumber="{Binding PageNumber}"
                      PageCount="{Binding PageCount, Mode=OneWayToSource}" />
         <Label Grid.Row="1" Text="{Binding Status}" Margin="12,6" FontSize="13" />

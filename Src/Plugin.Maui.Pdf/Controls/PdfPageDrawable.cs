@@ -7,57 +7,79 @@ using IImage = Microsoft.Maui.Graphics.IImage;
 namespace Plugin.Maui.Pdf;
 
 /// <summary>
-/// Draws the current page into the viewer's GraphicsView from bitmaps made off the UI thread (see
-/// <see cref="BitmapPlan"/>): a whole-page backdrop, plus a detail bitmap of the visible region when zoomed in too
-/// far for a whole page at the exact scale. During a gesture they are stretched until sharp ones are ready. The
-/// display list is not replayed on the UI thread (on CoreGraphics a page of text takes ~140 ms): until the first
-/// bitmap of a page is ready the page is blank, unless no bitmap could be made.
-/// Members are only touched on the UI thread.
+/// Draws the pages in view into the viewer's GraphicsView: one page in single-page mode, the visible part of the
+/// strip in continuous mode. Each page is drawn from bitmaps made off the UI thread (see <see cref="BitmapPlan"/>):
+/// a whole-page backdrop, plus a detail bitmap of the visible region when zoomed in too far for a whole page at the
+/// exact scale. During a gesture they are stretched until sharp ones are ready. The display list is not replayed on
+/// the UI thread (on CoreGraphics a page of text takes ~140 ms): until a page's first bitmap is ready it is blank,
+/// unless no bitmap could be made. Members are only touched on the UI thread.
 /// </summary>
 internal sealed class PdfPageDrawable : IDrawable
 {
-    public PdfDisplayList? Page { get; set; }
-    public PageLayout Layout { get; set; }
+    public IReadOnlyList<PagePlacement<PdfDisplayList>> Placements { get; set; } = [];
     public Color Background { get; set; } = Colors.LightGray;
     public Color Shadow { get; set; } = Color.FromRgba(0, 0, 0, 0.25f);
-    /// <summary>The whole page, possibly at a reduced scale.</summary>
-    public PageBitmap? Backdrop { get; set; }
 
-    /// <summary>Part of the page at the exact scale, when the backdrop is reduced.</summary>
-    public PageBitmap? Detail { get; set; }
+    /// <summary>Bitmaps by page number. A bitmap whose display list is not the page's current one is ignored.</summary>
+    public Dictionary<int, PageBitmaps> Bitmaps { get; } = [];
 
-    /// <summary>Replay the page when there is no bitmap (set after making one failed).</summary>
+    /// <summary>Replay pages that have no bitmap (set after making one failed).</summary>
     public bool ReplayWithoutBitmap { get; set; }
 
     public void Draw(ICanvas canvas, RectF dirtyRect)
     {
         canvas.FillColor = Background;
         canvas.FillRectangle(dirtyRect);
-        if (Page is not { } page || Layout.Scale <= 0) return;
+        foreach (var placement in Placements) DrawPage(canvas, placement);
+    }
 
-        float x = (float)Layout.OffsetX, y = (float)Layout.OffsetY;
-        float width = (float)Layout.ContentWidth, height = (float)Layout.ContentHeight;
+    private void DrawPage(ICanvas canvas, PagePlacement<PdfDisplayList> placement)
+    {
+        var layout = placement.Layout;
+        if (layout.Scale <= 0) return;
+        float x = (float)layout.OffsetX, y = (float)layout.OffsetY;
+        float width = (float)layout.ContentWidth, height = (float)layout.ContentHeight;
         canvas.FillColor = Shadow;
         canvas.FillRectangle(x + 2, y + 3, width, height);
-
-        var backdrop = Backdrop is { } b && ReferenceEquals(b.Page, page) ? b : null;
-        var detail = Detail is { } d && ReferenceEquals(d.Page, page) ? d : null;
-        canvas.FillColor = Colors.White; // until a bitmap is ready, and behind a detail bitmap that does not cover the view
+        // White until a bitmap is ready, and behind a detail bitmap that does not cover the view.
+        canvas.FillColor = Colors.White;
         canvas.FillRectangle(x, y, width, height);
+        if (placement.Rendered?.Content is not { } page) return;
+
+        Bitmaps.TryGetValue(placement.Page, out var bitmaps);
+        var backdrop = bitmaps?.Backdrop is { } b && ReferenceEquals(b.Page, page) ? b : null;
+        var detail = bitmaps?.Detail is { } d && ReferenceEquals(d.Page, page) ? d : null;
         if (backdrop is null && detail is null)
         {
-            if (ReplayWithoutBitmap) PdfPageDrawing.Draw(page, canvas, (float)Layout.Scale, x, y);
+            if (ReplayWithoutBitmap) PdfPageDrawing.Draw(page, canvas, (float)layout.Scale, x, y);
             return;
         }
         // Exact size when settled, stretched mid-gesture.
         if (backdrop is not null) canvas.DrawImage(backdrop.Image, x, y, width, height);
         if (detail is not null)
         {
-            var scale = (float)Layout.Scale;
+            var scale = (float)layout.Scale;
             var r = detail.Region;
             canvas.DrawImage(detail.Image, x + (float)r.X * scale, y + (float)r.Y * scale,
                 (float)r.Width * scale, (float)r.Height * scale);
         }
+    }
+}
+
+/// <summary>The cached bitmaps of one page.</summary>
+internal sealed class PageBitmaps
+{
+    /// <summary>The whole page, possibly at a reduced scale.</summary>
+    public PageBitmap? Backdrop { get; set; }
+
+    /// <summary>Part of the page at the exact scale, when the backdrop is reduced.</summary>
+    public PageBitmap? Detail { get; set; }
+
+    public void Dispose()
+    {
+        Backdrop?.Dispose();
+        Detail?.Dispose();
+        Backdrop = Detail = null;
     }
 }
 

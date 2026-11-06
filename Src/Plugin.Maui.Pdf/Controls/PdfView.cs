@@ -8,6 +8,7 @@ using Melville.Pdf.MauiGraphics.Drawing;
 using Melville.Pdf.Model;
 using Melville.Pdf.Model.Renderers.FontRenderings.DefaultFonts;
 using Melville.Pdf.ViewerModel;
+using ScrollOrientation = Microsoft.Maui.ScrollOrientation;
 using Microsoft.Extensions.DependencyInjection;
 using ViewModel = Melville.Pdf.ViewerModel.PdfViewerViewModel<Melville.Pdf.MauiGraphics.Drawing.PdfDisplayList>;
 
@@ -58,6 +59,24 @@ public partial class PdfView : ContentView
     /// <summary>Why the document or the current page could not be shown, or null.</summary>
     public static readonly BindableProperty ErrorMessageProperty = ErrorMessageKey.BindableProperty;
 
+    /// <summary>One page at a time (the default), or all pages in one scrolling strip.</summary>
+    public static readonly BindableProperty DisplayModeProperty = BindableProperty.Create(
+        nameof(DisplayMode), typeof(DisplayMode), typeof(PdfView), DisplayMode.SinglePage, BindingMode.TwoWay,
+        propertyChanged: (b, _, n) => ((PdfView)b).OnDisplayModeChanged((DisplayMode)n));
+
+    /// <summary>
+    /// The direction pages follow each other in continuous mode, as for ScrollView: Vertical (the default) or
+    /// Horizontal. Both and Neither are treated as Vertical.
+    /// </summary>
+    public static readonly BindableProperty ScrollOrientationProperty = BindableProperty.Create(
+        nameof(ScrollOrientation), typeof(ScrollOrientation), typeof(PdfView), ScrollOrientation.Vertical,
+        propertyChanged: (b, _, n) => { if (((PdfView)b).viewModel is { } vm) vm.ScrollOrientation = ToStrip((ScrollOrientation)n); });
+
+    private static Melville.Pdf.ViewerModel.ScrollOrientation ToStrip(ScrollOrientation orientation) =>
+        orientation == ScrollOrientation.Horizontal
+            ? Melville.Pdf.ViewerModel.ScrollOrientation.Horizontal
+            : Melville.Pdf.ViewerModel.ScrollOrientation.Vertical;
+
     /// <summary>Whether the navigation and zoom toolbar is shown.</summary>
     public static readonly BindableProperty ShowToolbarProperty = BindableProperty.Create(
         nameof(ShowToolbar), typeof(bool), typeof(PdfView), true);
@@ -95,6 +114,16 @@ public partial class PdfView : ContentView
 
     /// <inheritdoc cref="ErrorMessageProperty"/>
     public string? ErrorMessage { get => (string?)GetValue(ErrorMessageProperty); private set => SetValue(ErrorMessageKey, value); }
+
+    /// <inheritdoc cref="DisplayModeProperty"/>
+    public DisplayMode DisplayMode { get => (DisplayMode)GetValue(DisplayModeProperty); set => SetValue(DisplayModeProperty, value); }
+
+    /// <inheritdoc cref="ScrollOrientationProperty"/>
+    public ScrollOrientation ScrollOrientation
+    {
+        get => (ScrollOrientation)GetValue(ScrollOrientationProperty);
+        set => SetValue(ScrollOrientationProperty, value);
+    }
 
     /// <inheritdoc cref="ShowToolbarProperty"/>
     public bool ShowToolbar { get => (bool)GetValue(ShowToolbarProperty); set => SetValue(ShowToolbarProperty, value); }
@@ -272,6 +301,8 @@ public partial class PdfView : ContentView
         opened.PageSelector.PropertyChanged += OnPageSelectorChanged;
         PageCount = opened.PageCount;
         opened.SetViewport(pageView.Width, pageView.Height);
+        opened.ScrollOrientation = ToStrip(ScrollOrientation);
+        opened.DisplayMode = DisplayMode;
         if (requestedViewState is { } requested)
         {
             requestedViewState = null;
@@ -297,7 +328,7 @@ public partial class PdfView : ContentView
         ViewState = null;
         updatingViewState = false;
         ClearBitmaps();
-        drawable.Page = null;
+        drawable.Placements = [];
         pageView.Invalidate();
         await old.DisposeAsync();
     }
@@ -307,7 +338,7 @@ public partial class PdfView : ContentView
     {
         switch (e.PropertyName)
         {
-            case nameof(ViewModel.CurrentPage) or nameof(ViewModel.Layout):
+            case nameof(ViewModel.VisiblePages):
                 Dispatcher.Dispatch(UpdatePage);
                 break;
             case nameof(ViewModel.RenderError):
@@ -334,6 +365,19 @@ public partial class PdfView : ContentView
             SemanticScreenReader.Default.Announce(description);
         });
     }
+
+    private void OnDisplayModeChanged(DisplayMode mode)
+    {
+        if (viewModel is { } vm) vm.DisplayMode = mode;
+        if (displayModeButton is { } button)
+        {
+            // The button names the mode it switches to.
+            button.Text = mode == DisplayMode.Continuous ? "Pages" : "Scroll";
+            SemanticProperties.SetDescription(button, mode == DisplayMode.Continuous ? "Show one page at a time" : "Scroll through all pages");
+        }
+    }
+
+    private Button? displayModeButton;
 
     private void PublishViewState()
     {
@@ -408,19 +452,20 @@ public partial class PdfView : ContentView
     private void UpdatePage()
     {
         if (viewModel is not { } vm) return;
-        var page = vm.CurrentPage?.Content;
-        var newPage = !ReferenceEquals(drawable.Page, page);
-        if (newPage)
+        var placements = vm.VisiblePages;
+        // A page whose rendering changed (another page, a re-render after a layer toggle) loses its bitmaps; a page
+        // that appears without one is blank until it has one, so bitmaps then start at once.
+        var newContent = false;
+        foreach (var placement in placements)
         {
-            ClearBitmaps();
-            drawable.ReplayWithoutBitmap = false;
+            var hasBitmap = drawable.Bitmaps.TryGetValue(placement.Page, out var bitmaps) &&
+                            ReferenceEquals((bitmaps.Backdrop ?? bitmaps.Detail)?.Page, placement.Rendered?.Content);
+            if (!hasBitmap && placement.Rendered is not null) newContent = true;
         }
-        drawable.Page = page;
-        drawable.Layout = vm.Layout;
+        drawable.Placements = placements;
         SemanticProperties.SetDescription(pageView, $"Page {vm.PageSelector.Page} of {vm.PageCount}");
         pageView.Invalidate();
-        // A new page is blank until its bitmap exists, so start at once; zoom and pan changes wait for a pause.
-        ScheduleBitmap(immediate: newPage);
+        ScheduleBitmap(immediate: newContent);
     }
 
     // ---- Bitmap cache -----------------------------------------------------------------------------------------
@@ -430,19 +475,40 @@ public partial class PdfView : ContentView
         var version = ++bitmapVersion;
         if (!immediate) await Task.Delay(TimeSpan.FromMilliseconds(BitmapDelayMs));
         else await Task.Yield(); // let the layout settle (viewport size) before planning
-        if (version != bitmapVersion || window is null || drawable.Page is not { } page) return;
+        if (version != bitmapVersion || window is null) return;
 
-        var layout = drawable.Layout;
+        var placements = drawable.Placements.Where(p => p.Rendered is not null).ToList();
+        // Forget bitmaps of pages that left the view (they are rebuilt if the page comes back).
+        foreach (var gone in drawable.Bitmaps.Keys.Where(k => placements.All(p => p.Page != k)).ToList())
+        {
+            drawable.Bitmaps[gone].Dispose();
+            drawable.Bitmaps.Remove(gone);
+        }
         var density = DeviceDisplay.Current.MainDisplayInfo.Density is > 0 and var d ? d : 1;
-        var plan = BitmapPlan.Compute(page.PageWidth, page.PageHeight, layout, pageView.Width, pageView.Height,
-            density, PageBitmap.MaxPixels);
+        // The pixel budget is shared by the pages in view (several pages at fit width in continuous mode).
+        var budget = Math.Max(PageBitmap.MaxPixels / Math.Max(1, placements.Count), PageBitmap.MaxPixels / 4);
+        // Nearest the centre first: that is where the user looks.
+        var centre = pageView.Height / 2;
+        foreach (var placement in placements.OrderBy(p => Math.Abs(p.Layout.OffsetY + p.Layout.ContentHeight / 2 - centre)))
+        {
+            if (version != bitmapVersion) return;
+            await UpdatePageBitmapsAsync(placement, density, budget, version);
+        }
+    }
+
+    private async Task UpdatePageBitmapsAsync(PagePlacement<PdfDisplayList> placement, double density, long budget, int version)
+    {
+        var page = placement.Rendered!.Content;
+        var layout = placement.Layout;
+        var plan = BitmapPlan.Compute(page.PageWidth, page.PageHeight, layout, pageView.Width, pageView.Height, density, budget);
         if (plan.BackdropScale <= 0) return;
         var visible = BitmapPlan.Visible(page.PageWidth, page.PageHeight, layout, pageView.Width, pageView.Height);
-        var keepBackdrop = drawable.Backdrop is { } backdrop && ReferenceEquals(backdrop.Page, page) &&
+        if (!drawable.Bitmaps.TryGetValue(placement.Page, out var bitmaps)) drawable.Bitmaps[placement.Page] = bitmaps = new PageBitmaps();
+        var keepBackdrop = bitmaps.Backdrop is { } backdrop && ReferenceEquals(backdrop.Page, page) &&
                            backdrop.Scale == plan.BackdropScale;
         var keepDetail = plan.Detail is null
-            ? drawable.Detail is null
-            : drawable.Detail is { } detail && ReferenceEquals(detail.Page, page) && detail.Scale == plan.Scale &&
+            ? bitmaps.Detail is null
+            : bitmaps.Detail is { } detail && ReferenceEquals(detail.Page, page) && detail.Scale == plan.Scale &&
               detail.Region.Contains(visible);
         if (keepBackdrop && keepDetail) return;
 
@@ -458,14 +524,18 @@ public partial class PdfView : ContentView
             // Out of memory or a platform failure: keep what is cached, and draw from the display list without one.
             drawable.ReplayWithoutBitmap = true;
         }
-        if (version != bitmapVersion || !ReferenceEquals(drawable.Page, page))
+        // Superseded, or the page left the view or was re-rendered while drawing: throw the result away.
+        if (version != bitmapVersion || !drawable.Bitmaps.TryGetValue(placement.Page, out var current) ||
+            !ReferenceEquals(current, bitmaps) ||
+            drawable.Placements.FirstOrDefault(p => p.Page == placement.Page)?.Rendered?.Content is not { } shown ||
+            !ReferenceEquals(shown, page))
         {
             newBackdrop?.Dispose();
             newDetail?.Dispose();
             return;
         }
-        if (!keepBackdrop) Replace(drawable.Backdrop, newBackdrop, b => drawable.Backdrop = b);
-        if (!keepDetail) Replace(drawable.Detail, newDetail, b => drawable.Detail = b);
+        if (!keepBackdrop) Replace(bitmaps.Backdrop, newBackdrop, b => bitmaps.Backdrop = b);
+        if (!keepDetail) Replace(bitmaps.Detail, newDetail, b => bitmaps.Detail = b);
         pageView.Invalidate();
     }
 
@@ -478,8 +548,9 @@ public partial class PdfView : ContentView
 
     private void ClearBitmaps()
     {
-        Replace(drawable.Backdrop, null, b => drawable.Backdrop = b);
-        Replace(drawable.Detail, null, b => drawable.Detail = b);
+        foreach (var bitmaps in drawable.Bitmaps.Values) bitmaps.Dispose();
+        drawable.Bitmaps.Clear();
+        drawable.ReplayWithoutBitmap = false;
     }
 
     // Free the bitmaps while the app is in the background; they are rebuilt when the window is resumed.
@@ -571,13 +642,14 @@ public partial class PdfView : ContentView
 
     private View CreateToolbar()
     {
-        static Button MakeButton(string text, string description)
+        // AutomationId can be set only once: pass `id` for buttons whose description changes later.
+        static Button MakeButton(string text, string description, string? id = null)
         {
             var button = new Button
             {
                 // 44 x 44: the smallest comfortable touch target (Apple HIG; Android asks for 48dp).
                 Text = text, Padding = new Thickness(10, 4), MinimumWidthRequest = 44, MinimumHeightRequest = 44,
-                AutomationId = "PdfView." + description.Replace(" ", ""),
+                AutomationId = "PdfView." + (id ?? description.Replace(" ", "")),
             };
             SemanticProperties.SetDescription(button, description);
             return button;
@@ -619,6 +691,13 @@ public partial class PdfView : ContentView
         var fitWidth = MakeButton("Width", "Fit width");
         fitWidth.Command = FitWidthCommand;
 
+        displayModeButton = MakeButton("Scroll", "Scroll through all pages", id: "Displaymode");
+        displayModeButton.Clicked += (_, _) =>
+        {
+            DisplayMode = DisplayMode == DisplayMode.Continuous ? DisplayMode.SinglePage : DisplayMode.Continuous;
+            SemanticScreenReader.Default.Announce(DisplayMode == DisplayMode.Continuous ? "Continuous scroll" : "One page at a time");
+        };
+
         var layers = MakeButton("Layers", "Show layers");
         layers.SetBinding(IsVisibleProperty, static (ViewModel vm) => vm.Layers, converter: NotEmptyConverter.Instance);
         layers.Clicked += (_, _) =>
@@ -634,7 +713,7 @@ public partial class PdfView : ContentView
             JustifyContent = Microsoft.Maui.Layouts.FlexJustify.Center,
             AlignItems = Microsoft.Maui.Layouts.FlexAlignItems.Center,
             Padding = new Thickness(4),
-            Children = { first, previous, page, count, next, last, zoomOut, zoomIn, fitPage, fitWidth, layers },
+            Children = { first, previous, page, count, next, last, zoomOut, zoomIn, fitPage, fitWidth, displayModeButton, layers },
         };
     }
 

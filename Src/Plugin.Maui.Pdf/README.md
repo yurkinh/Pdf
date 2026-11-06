@@ -8,8 +8,9 @@ Pages are rendered by [Melville.Pdf](https://github.com/DrJohnMelville/Pdf), a P
 
 ## Features
 
+- **Display modes:** one page at a time, or **continuous scroll** through all pages, vertically or horizontally. Only the pages near the view are rendered.
 - **Gestures:** pinch to zoom around your fingers, drag to pan, double-tap to switch between the whole page and 2×.
-- **Toolbar:** first, previous, next and last page; a page number box; zoom in and out; fit page; fit width; layers. Hide it with `ShowToolbar="False"` to use your own controls with the public commands.
+- **Toolbar:** first, previous, next and last page; a page number box; zoom in and out; fit page; fit width; single page or continuous scroll; layers. Hide it with `ShowToolbar="False"` to use your own controls with the public commands.
 - **Layers:** optional content groups can be shown and hidden.
 - **Encrypted PDFs:** plug in your own `IPasswordSource` to supply passwords.
 - **Sources:** app package files, the file system, `FilePicker` results (including Android content URIs), byte arrays and streams.
@@ -67,7 +68,9 @@ Apps that use .NET MAUI 10's implicit (global) XAML namespaces can write `<PdfVi
 | `PageNumber` | `int` | two-way | The page shown, starting at 1. |
 | `PageCount` | `int` | read-only | The number of pages, or 0 when no document is open. |
 | `ZoomMode` | `ZoomMode` | two-way | `FitPage` (the default), `FitWidth`, or `Custom` after zooming. |
-| `ViewState` | `PdfViewState?` | two-way | The page, zoom mode, zoom and scroll. Set it before `Source` to open at a saved position. |
+| `DisplayMode` | `DisplayMode` | two-way | `SinglePage` (the default) or `Continuous`. The toolbar button switches between them. |
+| `ScrollOrientation` | `ScrollOrientation` | | In continuous mode: `Vertical` (the default) or `Horizontal`. This is MAUI's `ScrollView` enum; `Both` and `Neither` mean vertical. |
+| `ViewState` | `PdfViewState?` | two-way | The page, zoom mode, zoom and scroll. Set it before `Source` to open at a saved position. It works in both display modes. |
 | `IsLoading` | `bool` | read-only | True while a document is opening. |
 | `ErrorMessage` | `string?` | read-only | Why the document or the page could not be shown. |
 | `ShowToolbar` | `bool` | | Shows the built-in toolbar. The default is true. |
@@ -126,7 +129,6 @@ These Release-build timings come from a simulator and an emulator, not real devi
 
 ## Limitations
 
-- One page at a time: no continuous scroll.
 - No text search or selection, annotations, form filling, link navigation or printing.
 - A screen reader hears "Page X of Y", not the page text.
 - Windows has not been tested on a device.

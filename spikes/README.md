@@ -110,6 +110,32 @@ Checked on Mac Catalyst through DevFlow: Library, Gallery filter and open, encry
 - **DevFlow**: `ui tap` does not trigger CollectionView selection, so rows use a `TapGestureRecognizer` command. Tapping by `--text` hits the label, which has no handler, so the script taps the row (the label's parent). Each separate CLI call can hit the session lock, so one long-lived `maui devflow batch` process is driven from a script.
 - **Not done**: CJK samples (the CJK font library is 468 MB), "Open in…" document types on iOS/Android, packaged MSIX on Windows (still unpackaged; no Windows machine). CI builds the sample but runs no device tests.
 
+## Phase 11 results (continuous scroll)
+
+**What it does.** `PdfView.DisplayMode="Continuous"` shows every page in one scrolling strip, vertical or horizontal (`ScrollOrientation`). The toolbar has a Scroll/Pages toggle. `SinglePage` stays the default.
+
+**View model.**
+- `ContinuousLayout` is pure and unit tested: pages stacked with an 8-unit gap and centred across the strip; one scale from the largest page; centring when the content is smaller than the view; clamping; hit-testing (`ToPage`); `PagesInView(margin)`.
+- In continuous mode the view model renders only the pages in view and their neighbours (up to one viewport away), one at a time, nearest first. It forgets pages more than three viewports away.
+- Scrolling updates `PageNumber` without jumping; navigation scrolls to the page.
+- Zoom keeps the point under the finger, and fit modes keep the top-left page point.
+- `ViewState` is the page and page point at the top-left, so save and restore work in both modes.
+- Both modes publish `VisiblePages`, which the control draws.
+
+**Melville.Pdf change:** `DocumentRenderer.GetPageBoxAsync(page)` returns the visible box (crop box after rotation) without rendering, so every page is measured up front. It's additive.
+
+**Control.** The drawable draws a list of placements. Each page has its own backdrop and detail bitmaps, and the 6 MP budget is shared by the pages in view (at least 1.5 MP each). Bitmaps of pages that leave the view are freed.
+
+**Bug found and fixed:** the new toolbar toggle set its `AutomationId` twice, and MAUI allows only one, so *every* `PdfView` threw during construction. Shell swallowed the exception, so opening a document simply did nothing.
+
+**Checked.**
+- Tests: 63 view-model tests, including 16 new ones. 10 repeated runs were stable.
+- Mac Catalyst through DevFlow: strip, scrolling, page tracking, Last page jump, zoomed-out multi-page view.
+- Android emulator: strip at screen density; the page number follows scrolling.
+- The Native AOT publish still has zero IL warnings.
+
+**Not done.** Kinetic (fling) scrolling, page-turn animation, and a two-page spread mode.
+
 ## Phase 9 results (packaging as Plugin.Maui.Pdf)
 
 **Rename.** The control now follows the Plugin.Maui.* conventions:

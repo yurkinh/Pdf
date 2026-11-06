@@ -3,7 +3,10 @@ namespace Melville.Pdf.ViewerModel;
 /// <summary>A rectangle on the page, in PDF points (origin at the page's top-left corner, as laid out).</summary>
 public readonly record struct PageRect(double X, double Y, double Width, double Height)
 {
+    /// <summary>X + Width.</summary>
     public double Right => X + Width;
+
+    /// <summary>Y + Height.</summary>
     public double Bottom => Y + Height;
 
     /// <summary>Whether <paramref name="other"/> lies entirely inside this rectangle.</summary>

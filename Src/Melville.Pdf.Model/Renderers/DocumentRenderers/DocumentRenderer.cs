@@ -91,6 +91,20 @@ public abstract class DocumentRenderer : IDisposable
         await CreateRenderEngine(pageStruct, renderTarget).RunContentStreamAsync(wrapOutputWith).CA();
     }
 
+    /// <summary>
+    /// The visible box of a page (its crop box after the page's default rotation), in PDF points: the same
+    /// rectangle <see cref="RenderPageToAsync"/> passes to its target factory, without rendering the page.
+    /// Viewers use it to lay out many pages before any of them is drawn.
+    /// </summary>
+    /// <param name="oneBasedPageNumber">The page to measure.</param>
+    public async ValueTask<PdfRect> GetPageBoxAsync(int oneBasedPageNumber)
+    {
+        var pageStruct = await GetPageContentAsync(oneBasedPageNumber).CA();
+        var cropRect = await GetCropDimensionsAsync(pageStruct).CA();
+        var rotation = CreateRotateMatrix(cropRect, await pageStruct.GetDefaultRotationAsync().CA());
+        return cropRect.Transform(rotation);
+    }
+
     private Matrix3x2 CreateRotateMatrix(PdfRect cropRect, long rotateBy)
     {
         var centerX = cropRect.Left + cropRect.Right / 2;

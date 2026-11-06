@@ -9,6 +9,9 @@ namespace Melville.Pdf.ViewerModel;
 /// <summary>
 /// The UI-independent state of a PDF viewer: the current page, its rendering, zoom and layout, and the
 /// optional content (layers) list. Property changes may be raised from a background thread.
+/// In <see cref="Melville.Pdf.ViewerModel.DisplayMode.Continuous"/> mode every page sits in one scrolling strip
+/// (<see cref="ContinuousLayout"/>); the pages in view are rendered on demand and published in
+/// <see cref="VisiblePages"/>, which the view draws in either mode.
 /// </summary>
 /// <typeparam name="TPage">What the display technology draws for one page.</typeparam>
 public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDisposable
@@ -40,6 +43,22 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private PdfViewState? pendingRestore;
     private PageLayout layout;
 
+    // Continuous mode. Guarded by continuousLock: layout updates come from the UI (pan, zoom) and from renders.
+    private readonly object continuousLock = new();
+    private PageSize[] pageSizes = [];
+    private DisplayMode displayMode = DisplayMode.SinglePage;
+    private ScrollOrientation scrollOrientation = ScrollOrientation.Vertical;
+    private ContinuousLayout? continuousLayout;
+    private double continuousScrollX, continuousScrollY;
+    private readonly Dictionary<int, RenderedPage<TPage>> renderedPages = [];
+    private readonly HashSet<int> failedPages = [];
+    private int[] wantedPages = [];
+    private int continuousGeneration;
+    private int pumping;
+    private bool syncingPageSelector;
+    private bool scrollToCurrentPageStart; // the next continuous layout shows the current page from its top
+    private IReadOnlyList<PagePlacement<TPage>> visiblePages = [];
+
     private PdfViewerViewModel(DocumentRenderer document, IPageRenderer<TPage> renderer)
     {
         this.document = document;
@@ -64,10 +83,72 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         DocumentRenderer document, IPageRenderer<TPage> renderer)
     {
         var viewModel = new PdfViewerViewModel<TPage>(document, renderer);
+        await viewModel.MeasurePagesAsync().ConfigureAwait(false);
         await viewModel.RebuildLayersAsync().ConfigureAwait(false);
         await viewModel.RenderCurrentPageAsync().ConfigureAwait(false);
         return viewModel;
     }
+
+    // Every page's size, for the continuous layout: the page boxes only, no content is parsed.
+    private async Task MeasurePagesAsync()
+    {
+        var sizes = new PageSize[document.TotalPages];
+        for (int i = 0; i < sizes.Length; i++)
+        {
+            var box = await document.GetPageBoxAsync(i + 1).ConfigureAwait(false);
+            sizes[i] = new PageSize(Math.Abs(box.Right - box.Left), Math.Abs(box.Top - box.Bottom));
+        }
+        pageSizes = sizes;
+    }
+
+    /// <summary>One page at a time (the default) or all pages in a scrolling strip.</summary>
+    public DisplayMode DisplayMode
+    {
+        get => displayMode;
+        set
+        {
+            if (displayMode == value) return;
+            displayMode = value;
+            OnPropertyChanged(nameof(DisplayMode));
+            if (value == DisplayMode.Continuous)
+            {
+                // Show the current page from its top, as navigating to it does.
+                scrollToCurrentPageStart = true;
+                UpdateLayout();
+            }
+            else
+            {
+                lock (continuousLock) continuousGeneration++; // drop renders in flight for the strip
+                layoutPageNumber = 0; // the single page starts at its top-left
+                _ = RenderCurrentPageAsync();
+                UpdateLayout();
+            }
+        }
+    }
+
+    /// <summary>The direction pages follow each other in continuous mode.</summary>
+    public ScrollOrientation ScrollOrientation
+    {
+        get => scrollOrientation;
+        set
+        {
+            if (scrollOrientation == value) return;
+            var anchor = TopLeftAnchor();
+            scrollOrientation = value;
+            OnPropertyChanged(nameof(ScrollOrientation));
+            UpdateLayout(anchor);
+        }
+    }
+
+    /// <summary>The pages to draw and where: the current page in single-page mode, the pages in view in continuous mode.</summary>
+    public IReadOnlyList<PagePlacement<TPage>> VisiblePages
+    {
+        get => visiblePages;
+        private set => Set(ref visiblePages, value);
+    }
+
+    /// <summary>The strip layout in continuous mode (null in single-page mode, or before the viewport is known).</summary>
+    public ContinuousLayout? Continuous => continuousLayout;
 
     /// <summary>The page selector: current page, page count and navigation commands.</summary>
     public PageSelectorViewModel PageSelector => pageSelector;
@@ -112,7 +193,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         get => zoomMode;
         set
         {
-            if (Set(ref zoomMode, value)) UpdateLayout();
+            var anchor = TopLeftAnchor();
+            if (Set(ref zoomMode, value)) UpdateLayout(anchor);
         }
     }
 
@@ -122,8 +204,9 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         get => customScale;
         set
         {
+            var anchor = TopLeftAnchor();
             if (Set(ref customScale, Math.Clamp(value, MinScale, MaxScale)) && ZoomMode == ZoomMode.Custom)
-                UpdateLayout();
+                UpdateLayout(anchor);
         }
     }
 
@@ -146,6 +229,11 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         get
         {
             if (pendingRestore is { } pending) return pending;
+            if (displayMode == DisplayMode.Continuous && continuousLayout is { } strip)
+            {
+                var (page, x, y) = strip.ToPage(0, 0);
+                return new PdfViewState(page, zoomMode, zoomMode == ZoomMode.Custom ? customScale : strip.Scale, x, y);
+            }
             var scale = layout.Scale > 0 ? layout.Scale : customScale;
             return new PdfViewState(pageSelector.Page, zoomMode, zoomMode == ZoomMode.Custom ? customScale : scale,
                 layout.Scale > 0 ? layout.ScrollX / layout.Scale : 0, layout.Scale > 0 ? layout.ScrollY / layout.Scale : 0);
@@ -164,7 +252,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         zoomMode = state.ZoomMode;
         OnPropertyChanged(nameof(CustomScale));
         OnPropertyChanged(nameof(ZoomMode));
-        if (pageSelector.Page != page) pageSelector.Page = page; // renders it; the layout follows the render
+        if (displayMode == DisplayMode.Continuous) UpdateLayout(); // applied as soon as the viewport is known
+        else if (pageSelector.Page != page) pageSelector.Page = page; // renders it; the layout follows the render
         else UpdateLayout();
     }
 
@@ -174,6 +263,12 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     /// </summary>
     public void PanBy(double dx, double dy)
     {
+        if (displayMode == DisplayMode.Continuous)
+        {
+            lock (continuousLock) (continuousScrollX, continuousScrollY) = (continuousScrollX - dx, continuousScrollY - dy);
+            UpdateLayout();
+            return;
+        }
         scrollX -= dx;
         scrollY -= dy;
         UpdateLayout();
@@ -185,6 +280,18 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     /// </summary>
     public void ZoomAt(double factor, double viewportX, double viewportY)
     {
+        if (displayMode == DisplayMode.Continuous)
+        {
+            if (continuousLayout is not { } strip || factor <= 0) return;
+            var (page, x, y) = strip.ToPage(viewportX, viewportY);
+            customScale = Math.Clamp(strip.Scale * factor, MinScale, MaxScale);
+            zoomMode = ZoomMode.Custom;
+            // The point under the finger stays there: anchor it at (viewportX, viewportY) instead of the corner.
+            UpdateLayout(new Anchor(page, x, y, viewportX, viewportY));
+            OnPropertyChanged(nameof(CustomScale));
+            OnPropertyChanged(nameof(ZoomMode));
+            return;
+        }
         if (layout.Scale <= 0 || factor <= 0) return;
         var (pageX, pageY) = layout.ToPage(viewportX, viewportY);
         var scale = Math.Clamp(layout.Scale * factor, MinScale, MaxScale);
@@ -213,9 +320,10 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     /// <summary>Tell the view model the size of the area the page is drawn in.</summary>
     public void SetViewport(double width, double height)
     {
+        var anchor = TopLeftAnchor();
         viewportWidth = width;
         viewportHeight = height;
-        UpdateLayout();
+        UpdateLayout(anchor);
     }
 
     /// <summary>
@@ -225,6 +333,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     public Task RenderCurrentPageAsync()
     {
         if (disposed) return Task.CompletedTask;
+        if (displayMode == DisplayMode.Continuous) return RerenderContinuousAsync();
         var cancellation = new CancellationTokenSource();
         Interlocked.Exchange(ref pendingRender, cancellation)?.Cancel();
         var generation = Interlocked.Increment(ref renderGeneration);
@@ -274,8 +383,16 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     {
         if (e.PropertyName != nameof(PageSelectorViewModel.Page)) return;
         // A restore waiting for another page is abandoned when the user picks a page themselves.
-        if (pendingRestore is { } pending && pending.Page != pageSelector.Page) pendingRestore = null;
+        if (!syncingPageSelector && pendingRestore is { } pending && pending.Page != pageSelector.Page) pendingRestore = null;
         OnPropertyChanged(nameof(ViewState));
+        if (displayMode == DisplayMode.Continuous)
+        {
+            // Scrolling moved the current page: nothing to do. Navigation (toolbar, typed page): scroll to it.
+            if (syncingPageSelector || continuousLayout is not { } strip) return;
+            lock (continuousLock) (continuousScrollX, continuousScrollY) = strip.ScrollToStartOf(pageSelector.Page);
+            UpdateLayout();
+            return;
+        }
         _ = RenderCurrentPageAsync();
     }
 
@@ -297,7 +414,168 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     private bool CanZoom(double factor) =>
         layout.Scale > 0 && Math.Clamp(layout.Scale * factor, MinScale, MaxScale) != layout.Scale;
 
-    private void UpdateLayout()
+    /// <summary>A page point to keep at a viewport position across a layout change (zoom, resize, mode change).</summary>
+    private readonly record struct Anchor(int Page, double PageX, double PageY, double ViewportX = 0, double ViewportY = 0);
+
+    // The page point at the viewport's top-left corner, in whichever mode is showing.
+    private Anchor? TopLeftAnchor()
+    {
+        if (displayMode == DisplayMode.Continuous)
+            return continuousLayout is { } strip && strip.PageCount > 0 ? ToAnchor(strip.ToPage(0, 0)) : null;
+        return layout.Scale > 0 && renderedPageNumber > 0 ? ToAnchor((renderedPageNumber, layout.ToPage(0, 0).X, layout.ToPage(0, 0).Y)) : null;
+        static Anchor ToAnchor((int Page, double X, double Y) point) => new(point.Page, point.X, point.Y);
+    }
+
+    private void UpdateLayout(Anchor? anchor = null)
+    {
+        if (displayMode == DisplayMode.Continuous)
+        {
+            UpdateContinuousLayout(anchor);
+            return;
+        }
+        UpdateSinglePageLayout();
+        VisiblePages = currentPage is { } shown && layout.Scale > 0
+            ? [new PagePlacement<TPage>(renderedPageNumber, layout, shown)]
+            : [];
+    }
+
+    private void UpdateContinuousLayout(Anchor? anchor)
+    {
+        if (pageSizes.Length == 0 || viewportWidth <= 0 || viewportHeight <= 0) return;
+        ContinuousLayout strip;
+        int[] wanted;
+        int current;
+        lock (continuousLock)
+        {
+            strip = ContinuousLayout.Compute(pageSizes, scrollOrientation, zoomMode, customScale,
+                viewportWidth, viewportHeight, continuousScrollX, continuousScrollY);
+            if (pendingRestore is { } restore)
+            {
+                pendingRestore = null;
+                anchor = new Anchor(Math.Clamp(restore.Page, 1, pageSizes.Length), restore.PageX, restore.PageY);
+            }
+            if (scrollToCurrentPageStart)
+            {
+                scrollToCurrentPageStart = false;
+                var (x, y) = strip.ScrollToStartOf(Math.Clamp(pageSelector.Page, 1, pageSizes.Length));
+                strip = strip.ScrolledTo(x, y);
+            }
+            else if (anchor is { } a)
+            {
+                var (x, y) = strip.ScrollFor(a.Page, a.PageX, a.PageY);
+                strip = strip.ScrolledTo(x - a.ViewportX, y - a.ViewportY);
+            }
+            (continuousScrollX, continuousScrollY) = (strip.ScrollX, strip.ScrollY);
+            continuousLayout = strip;
+            current = strip.CurrentPage;
+            // Render the pages in view, then their neighbours (up to a viewport away); forget pages far away.
+            var near = strip.PagesInView(margin: 1).ToList();
+            wanted = [.. near.OrderBy(p => Math.Abs(p - current))];
+            var keep = strip.PagesInView(margin: 3).ToHashSet();
+            foreach (var far in renderedPages.Keys.Where(p => !keep.Contains(p)).ToList()) renderedPages.Remove(far);
+            wantedPages = wanted;
+        }
+        Layout = strip.PageLayoutOf(current);
+        PublishVisiblePages();
+        if (pageSelector.Page != current)
+        {
+            syncingPageSelector = true;
+            try { pageSelector.Page = current; }
+            finally { syncingPageSelector = false; }
+        }
+        OnPropertyChanged(nameof(Continuous));
+        OnPropertyChanged(nameof(ViewState));
+        StartRenderPump();
+    }
+
+    private void PublishVisiblePages()
+    {
+        List<PagePlacement<TPage>> placements = [];
+        lock (continuousLock)
+        {
+            if (continuousLayout is not { } strip) return;
+            foreach (var page in strip.PagesInView())
+                placements.Add(new PagePlacement<TPage>(page, strip.PageLayoutOf(page), renderedPages.GetValueOrDefault(page)));
+        }
+        VisiblePages = placements;
+    }
+
+    // Renders the wanted pages one at a time, nearest the current page first, until all are rendered. Pages are
+    // re-read from wantedPages after each render, so scrolling away changes what comes next.
+    private void StartRenderPump()
+    {
+        if (disposed || Interlocked.Exchange(ref pumping, 1) == 1) return;
+        _ = PumpAsync();
+    }
+
+    private async Task PumpAsync()
+    {
+        IsRendering = true;
+        try
+        {
+            while (!disposed)
+            {
+                int page, generation;
+                lock (continuousLock)
+                {
+                    page = wantedPages.FirstOrDefault(p => !renderedPages.ContainsKey(p) && !failedPages.Contains(p));
+                    generation = continuousGeneration;
+                }
+                if (page == 0 || displayMode != DisplayMode.Continuous) break;
+                await RenderContinuousPageAsync(page, generation).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref pumping, 0);
+            IsRendering = false;
+        }
+        // A layout change can have asked for more while the last render finished.
+        lock (continuousLock)
+            if (displayMode != DisplayMode.Continuous || !wantedPages.Any(p => !renderedPages.ContainsKey(p) && !failedPages.Contains(p))) return;
+        StartRenderPump();
+    }
+
+    private async Task RenderContinuousPageAsync(int page, int generation)
+    {
+        await renderGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed) return;
+            var rendered = await renderer.RenderAsync(document, page, CancellationToken.None).ConfigureAwait(false);
+            lock (continuousLock)
+            {
+                if (generation != continuousGeneration) return; // layers changed meanwhile: render it again
+                renderedPages[page] = rendered;
+            }
+            RenderError = null;
+        }
+        catch (Exception e)
+        {
+            lock (continuousLock) failedPages.Add(page);
+            RenderError = e.Message;
+        }
+        finally
+        {
+            renderGate.Release();
+        }
+        PublishVisiblePages();
+    }
+
+    // Layers changed: every cached page is stale.
+    private Task RerenderContinuousAsync()
+    {
+        lock (continuousLock)
+        {
+            continuousGeneration++;
+            renderedPages.Clear();
+            failedPages.Clear();
+        }
+        UpdateLayout();
+        return Task.CompletedTask;
+    }
+
+    private void UpdateSinglePageLayout()
     {
         if (currentPage is not { } page)
         {
