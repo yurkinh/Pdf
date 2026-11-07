@@ -399,6 +399,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
             UpdateLayout();
             return;
         }
+        if (selection is { } selected && selected.Page != pageSelector.Page) ClearSelection(); // it left the view
         _ = RenderCurrentPageAsync();
     }
 
@@ -973,6 +974,131 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         double left = on.OffsetX + area.X * on.Scale, top = on.OffsetY + area.Y * on.Scale;
         return left >= 0 && top >= 0 && left + area.Width * on.Scale <= viewportWidth &&
                top + area.Height * on.Scale <= viewportHeight;
+    }
+
+    // ---- Selection ----------------------------------------------------------------------------------------------
+
+    private TextSelection? selection;
+    private (int Page, int Start, int End) selectionAnchor; // the word the selection grows from
+    private int selectionVersion;
+    private ICommand? selectAllCommand;
+
+    /// <summary>The selected text, on one page, or null. Changes raise PropertyChanged, possibly off the UI thread.</summary>
+    public TextSelection? Selection
+    {
+        get => selection;
+        private set => Set(ref selection, value);
+    }
+
+    /// <summary>Select all the text of the current page.</summary>
+    public ICommand SelectAllCommand => selectAllCommand ??=
+        new RelayCommand(() => _ = SelectAllAsync(pageSelector.Page), () => document.TotalPages > 0, this);
+
+    /// <summary>
+    /// Select the word under a viewport point, or the character there when it is not part of a word; with no text
+    /// near the point, clear the selection. Returns whether something was selected.
+    /// </summary>
+    public async Task<bool> SelectWordAtAsync(double viewportX, double viewportY)
+    {
+        var version = Interlocked.Increment(ref selectionVersion);
+        if (PagePointAt(viewportX, viewportY) is not var (page, x, y))
+        {
+            ClearSelection();
+            return false;
+        }
+        var text = await GetTextAsync(page).ConfigureAwait(false);
+        if (version != Volatile.Read(ref selectionVersion)) return false;
+        var index = TextHitTest.IndexAt(text, x, y);
+        if (index < 0 || !NearGlyph(text, index, x, y))
+        {
+            ClearSelection();
+            return false;
+        }
+        var (start, end) = TextHitTest.WordAt(text.Text, index);
+        selectionAnchor = (page, start, end);
+        Selection = TextSelection.Of(text, page, start, end);
+        return true;
+    }
+
+    /// <summary>
+    /// Grow or shrink the selection from the word first selected to the character nearest a viewport point, on the
+    /// same page (a selection does not cross pages). Does nothing without a selection.
+    /// </summary>
+    public async Task ExtendSelectionToAsync(double viewportX, double viewportY)
+    {
+        if (selection is null) return;
+        var version = Interlocked.Increment(ref selectionVersion);
+        var (page, anchorStart, anchorEnd) = selectionAnchor;
+        if (PlacementOf(page) is not { } placed) return;
+        var (x, y) = placed.ToPage(viewportX, viewportY);
+        var text = await GetTextAsync(page).ConfigureAwait(false);
+        if (version != Volatile.Read(ref selectionVersion) || selection is null) return;
+        var index = TextHitTest.IndexAt(text, x, y);
+        if (index < 0) return;
+        var (start, end) = index >= anchorStart
+            ? (anchorStart, Math.Max(anchorEnd, CharacterEnd(text, index)))
+            : (index, anchorEnd);
+        Selection = TextSelection.Of(text, page, start, end);
+    }
+
+    /// <summary>Select all the text of a page; a page without text clears the selection.</summary>
+    public async Task SelectAllAsync(int page)
+    {
+        var version = Interlocked.Increment(ref selectionVersion);
+        var text = await GetTextAsync(page).ConfigureAwait(false);
+        if (version != Volatile.Read(ref selectionVersion)) return;
+        if (text.Text.Length == 0)
+        {
+            ClearSelection();
+            return;
+        }
+        selectionAnchor = (page, 0, text.Text.Length);
+        Selection = TextSelection.Of(text, page, 0, text.Text.Length);
+    }
+
+    /// <summary>Select nothing.</summary>
+    public void ClearSelection()
+    {
+        Interlocked.Increment(ref selectionVersion);
+        Selection = null;
+    }
+
+    // Past the last character the glyph at index produced (a ligature produces several).
+    private static int CharacterEnd(PageText text, int index)
+    {
+        var glyph = text.GlyphAt(index);
+        var end = index + 1;
+        while (end < text.Text.Length && text.GlyphAt(end) == glyph) end++;
+        return end;
+    }
+
+    // A press must be on or close to a glyph (half a line height) to start a selection: not in a margin.
+    private static bool NearGlyph(PageText text, int index, double x, double y)
+    {
+        var glyph = text.Glyphs[text.GlyphAt(index)];
+        var (left, top, right, bottom) = glyph.Bounds;
+        var slack = glyph.LineHeight / 2;
+        return x >= left - slack && x <= right + slack && y >= top - slack && y <= bottom + slack;
+    }
+
+    // The page drawn under a viewport point and the point on it, or null over the background.
+    private (int Page, double X, double Y)? PagePointAt(double viewportX, double viewportY)
+    {
+        foreach (var placement in visiblePages)
+        {
+            var (x, y) = placement.Layout.ToPage(viewportX, viewportY);
+            var size = pageSizes.ElementAtOrDefault(placement.Page - 1);
+            if (x >= 0 && y >= 0 && x <= size.Width && y <= size.Height) return (placement.Page, x, y);
+        }
+        return null;
+    }
+
+    // Where a page is drawn now, if it is in view.
+    private PageLayout? PlacementOf(int page)
+    {
+        foreach (var placement in visiblePages)
+            if (placement.Page == page) return placement.Layout;
+        return null;
     }
 
     /// <summary>
