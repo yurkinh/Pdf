@@ -716,6 +716,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         {
             renderGate.Release();
         }
+        lock (plainTexts) plainTexts[page] = text.Text;
         lock (texts)
         {
             if (texts.TryAdd(page, text)) textUse.AddFirst(page);
@@ -728,6 +729,252 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         return text;
     }
 
+    // The plain text of every page read so far (a few kilobytes a page, against hundreds for the glyphs): a search
+    // matches it without reading the page again, and reads glyph positions only for pages that match.
+    private readonly Dictionary<int, string> plainTexts = [];
+
+    // A page's text for a search: from the cache when it is there, otherwise read without filling the cache, so a
+    // search through a long document does not push out the pages being looked at.
+    private async Task<PageText> SearchTextAsync(int page)
+    {
+        lock (texts)
+            if (texts.TryGetValue(page, out var known)) return known;
+        PageText text;
+        await renderGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed) return PageText.Empty;
+            text = await document.PageTextLayerAsync(page).ConfigureAwait(false);
+        }
+        finally
+        {
+            renderGate.Release();
+        }
+        lock (plainTexts) plainTexts[page] = text.Text;
+        return text;
+    }
+
+    // The matches on a page: pages whose text is known are matched first, and read only when they match.
+    private async Task<IReadOnlyList<SearchMatch>> SearchPageAsync(int page, string query, bool matchCase)
+    {
+        string? known;
+        lock (plainTexts) plainTexts.TryGetValue(page, out known);
+        if (known is not null && TextSearch.FindRanges(known, query, matchCase).Count == 0) return [];
+        return TextSearch.Find(await SearchTextAsync(page).ConfigureAwait(false), page, query, matchCase);
+    }
+
+    // ---- Search -------------------------------------------------------------------------------------------------
+
+    private const int SearchPublishMs = 100;
+    private readonly object searchLock = new(); // a search's check that it is current and its publish are one step
+    private CancellationTokenSource? searching;
+    private string searchQuery = "";
+    private IReadOnlyList<SearchMatch> searchMatches = [];
+    private IReadOnlyDictionary<int, SearchMatch[]> matchesByPage = new Dictionary<int, SearchMatch[]>();
+    private int currentMatchIndex = -1;
+    private int searchedPages;
+    private bool isSearching;
+    private ICommand? nextMatchCommand, previousMatchCommand;
+
+    /// <summary>The text of the last search, normalized (see <see cref="TextSearch.Normalize"/>); empty when there is none.</summary>
+    public string SearchQuery
+    {
+        get => searchQuery;
+        private set => Set(ref searchQuery, value);
+    }
+
+    /// <summary>
+    /// The matches of the last search in document order. It grows while <see cref="IsSearching"/>: pages are searched
+    /// from the current page to the end, then from the start, and each change publishes a new list.
+    /// </summary>
+    public IReadOnlyList<SearchMatch> SearchMatches
+    {
+        get => searchMatches;
+        private set => Set(ref searchMatches, value);
+    }
+
+    /// <summary>The index in <see cref="SearchMatches"/> of the match being shown, or -1.</summary>
+    public int CurrentMatchIndex
+    {
+        get => currentMatchIndex;
+        private set
+        {
+            if (Set(ref currentMatchIndex, value)) OnPropertyChanged(nameof(CurrentMatch));
+        }
+    }
+
+    /// <summary>The match being shown, or null.</summary>
+    public SearchMatch? CurrentMatch => currentMatchIndex >= 0 && currentMatchIndex < searchMatches.Count
+        ? searchMatches[currentMatchIndex] : null;
+
+    /// <summary>How many pages the current search has read, for progress (out of <see cref="PageCount"/>).</summary>
+    public int SearchedPages
+    {
+        get => searchedPages;
+        private set => Set(ref searchedPages, value);
+    }
+
+    /// <summary>True while a search is reading pages.</summary>
+    public bool IsSearching
+    {
+        get => isSearching;
+        private set => Set(ref isSearching, value);
+    }
+
+    /// <summary>The matches on one page, for highlighting.</summary>
+    public IReadOnlyList<SearchMatch> MatchesOn(int page) =>
+        matchesByPage.TryGetValue(page, out var onPage) ? onPage : [];
+
+    /// <summary>Show the next match, after the last one wrapping to the first.</summary>
+    public ICommand NextMatchCommand => nextMatchCommand ??=
+        new RelayCommand(() => ShowMatch((currentMatchIndex + 1) % searchMatches.Count), () => searchMatches.Count > 0, this);
+
+    /// <summary>Show the previous match, before the first one wrapping to the last.</summary>
+    public ICommand PreviousMatchCommand => previousMatchCommand ??=
+        new RelayCommand(() => ShowMatch(currentMatchIndex <= 0 ? searchMatches.Count - 1 : currentMatchIndex - 1),
+            () => searchMatches.Count > 0, this);
+
+    /// <summary>
+    /// Search every page for <paramref name="query"/> (see <see cref="TextSearch"/> for how text matches), replacing
+    /// the previous search. The first match on or after the current page is shown as soon as it is found. The task
+    /// completes when every page has been searched, or the search was replaced, cleared or cancelled; it never
+    /// throws for those. Pages are read between renders, so the viewer stays responsive.
+    /// </summary>
+    /// <returns>The number of matches; for a search that was replaced or cancelled, those found until then.</returns>
+    public async Task<int> SearchAsync(string query, bool matchCase = false, CancellationToken cancellation = default)
+    {
+        var mine = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var wanted = TextSearch.Normalize(query);
+        lock (searchLock)
+        {
+            searching?.Cancel();
+            searching = mine;
+            PublishMatches([], -1, wanted);
+            SearchedPages = 0;
+            if (wanted.Length == 0 || disposed) return 0;
+            IsSearching = true; // inside the lock, so a newer search cannot finish first and leave it set
+        }
+
+        var token = mine.Token;
+        List<SearchMatch> before = [], after = [];
+        int current = -1;           // the match to show: an index in before or after
+        var currentInBefore = false;
+        var start = Math.Clamp(pageSelector.Page, 1, Math.Max(1, document.TotalPages));
+        var lastPublish = Environment.TickCount64;
+        var searched = 0;
+        try
+        {
+            for (int i = 0; i < document.TotalPages && !token.IsCancellationRequested; i++)
+            {
+                var page = (start - 1 + i) % document.TotalPages + 1;
+                var found = await SearchPageAsync(page, wanted, matchCase).ConfigureAwait(false);
+                if (token.IsCancellationRequested || disposed) break;
+                searched = i + 1;
+                if (found.Count == 0)
+                {
+                    if (Environment.TickCount64 - lastPublish >= SearchPublishMs)
+                    {
+                        lastPublish = Environment.TickCount64;
+                        if (!Publish()) break;
+                    }
+                    continue;
+                }
+                var wrapped = page < start;
+                (wrapped ? before : after).AddRange(found);
+                var show = current < 0;
+                if (show) (current, currentInBefore) = wrapped ? (before.Count - found.Count, true) : (after.Count - found.Count, false);
+                var now = Environment.TickCount64;
+                if (show || now - lastPublish >= SearchPublishMs)
+                {
+                    lastPublish = now;
+                    if (!Publish()) break;
+                    if (show) ShowMatch(currentMatchIndex);
+                }
+            }
+            if (!token.IsCancellationRequested) Publish();
+            return before.Count + after.Count;
+        }
+        finally
+        {
+            lock (searchLock)
+                if (ReferenceEquals(searching, mine)) IsSearching = false;
+        }
+
+        // Matches on pages before the start come first; the current match keeps pointing at the same match.
+        bool Publish()
+        {
+            var index = current < 0 ? -1 : currentInBefore ? current : before.Count + current;
+            lock (searchLock)
+            {
+                if (!ReferenceEquals(searching, mine) || token.IsCancellationRequested) return false;
+                if (before.Count + after.Count != searchMatches.Count || index != currentMatchIndex)
+                    PublishMatches([.. before, .. after], index, wanted);
+                SearchedPages = searched;
+            }
+            return true;
+        }
+    }
+
+    private void PublishMatches(IReadOnlyList<SearchMatch> matches, int current, string query)
+    {
+        matchesByPage = matches.GroupBy(m => m.Page).ToDictionary(g => g.Key, g => g.ToArray());
+        SearchQuery = query;
+        SearchMatches = matches;
+        CurrentMatchIndex = current;
+        OnPropertyChanged(nameof(CurrentMatch));
+    }
+
+    /// <summary>Forget the search: no matches, nothing highlighted. A search still reading pages stops.</summary>
+    public void ClearSearch()
+    {
+        lock (searchLock)
+        {
+            searching?.Cancel();
+            searching = null;
+            PublishMatches([], -1, "");
+            SearchedPages = 0;
+            IsSearching = false;
+        }
+    }
+
+    /// <summary>
+    /// Make a match the current one and scroll it into view, keeping the zoom. A match already in view does not
+    /// move the page; otherwise it is placed a third of the way down the view, and centred across it when the view
+    /// would cut it off sideways.
+    /// </summary>
+    public void ShowMatch(int index)
+    {
+        if (index < 0 || index >= searchMatches.Count) return;
+        CurrentMatchIndex = index;
+        var match = searchMatches[index];
+        var area = match.Bounds;
+        var (scale, shown) = displayMode == DisplayMode.Continuous && continuousLayout is { } strip
+            ? (strip.Scale, (PageLayout?)strip.PageLayoutOf(match.Page))
+            : (layout.Scale, renderedPageNumber == match.Page && layout.Scale > 0 ? layout : (PageLayout?)null);
+        if (scale <= 0 || viewportWidth <= 0 || viewportHeight <= 0)
+        {
+            Restore(ViewState with { Page = match.Page, PageY = Math.Max(0, area.Y - 36) });
+            return;
+        }
+        if (shown is { } on && InView(on, area)) return;
+
+        var current = ViewState;
+        double viewWidth = viewportWidth / scale, viewHeight = viewportHeight / scale;
+        var x = current.PageX;
+        // The horizontal position only carries over on the same page; it is the left of the view in page points.
+        if (shown is null || area.X < x || area.Right > x + viewWidth)
+            x = area.Width >= viewWidth ? area.X : area.X - (viewWidth - area.Width) / 2;
+        var y = area.Y - viewHeight / 3;
+        Restore(current with { Page = match.Page, PageX = x, PageY = Math.Max(0, y) });
+    }
+
+    private bool InView(PageLayout on, PageRect area)
+    {
+        double left = on.OffsetX + area.X * on.Scale, top = on.OffsetY + area.Y * on.Scale;
+        return left >= 0 && top >= 0 && left + area.Width * on.Scale <= viewportWidth &&
+               top + area.Height * on.Scale <= viewportHeight;
+    }
+
     /// <summary>
     /// Stop rendering and release the document. Waits for a render in progress to finish first.
     /// </summary>
@@ -736,6 +983,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         if (disposed) return;
         disposed = true;
         pendingRender?.Cancel();
+        Interlocked.Exchange(ref searching, null)?.Cancel();
         pageSelector.PropertyChanged -= OnPageSelectorChanged;
         document.OptionalContentState.SelectedContentChanged -= OnSelectedContentChanged;
         if (document.OptionalContentState is INotifyPropertyChanged notifying)
