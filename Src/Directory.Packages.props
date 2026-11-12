@@ -11,8 +11,11 @@
     <PackageVersion Include="Melville.FileSystem" Version="0.8.5" />
     <PackageVersion Include="Melville.Generators.INPC" Version="0.8.5" />
     <PackageVersion Include="Melville.Hacks" Version="0.8.5" />
-    <PackageVersion Include="Microsoft.Maui.Graphics" Version="10.0.120" />
-    <PackageVersion Include="Microsoft.Maui.Graphics.Skia" Version="10.0.120" />
+    <!-- MAUI 11 packages target net11.0 only, and MAUI 10 packages net10.0: each target framework gets its own. -->
+    <PackageVersion Include="Microsoft.Maui.Graphics" Version="10.0.120" Condition="!$(TargetFramework.StartsWith('net11'))" />
+    <PackageVersion Include="Microsoft.Maui.Graphics.Skia" Version="10.0.120" Condition="!$(TargetFramework.StartsWith('net11'))" />
+    <PackageVersion Include="Microsoft.Maui.Graphics" Version="11.0.10" Condition="$(TargetFramework.StartsWith('net11'))" />
+    <PackageVersion Include="Microsoft.Maui.Graphics.Skia" Version="11.0.10" Condition="$(TargetFramework.StartsWith('net11'))" />
     <PackageVersion Include="Melville.INPC" Version="0.8.5" />
     <PackageVersion Include="Melville.Linq" Version="0.8.5" />
     <PackageVersion Include="Melville.Linq.Statistics" Version="0.8.4" />
