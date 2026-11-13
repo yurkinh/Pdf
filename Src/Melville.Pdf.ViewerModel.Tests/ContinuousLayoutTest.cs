@@ -44,13 +44,23 @@ public class ContinuousLayoutTest
     }
 
     [Fact]
-    public void ContentSmallerThanTheViewportIsCentred()
+    public void ContentSmallerThanTheViewportStartsAtTheTopCentredAcross()
     {
         var sut = ContinuousLayout.Compute(Pages(1), ScrollOrientation.Vertical, ZoomMode.Custom, 0.5, 1000, 1000);
 
         sut.MaxScrollY.Should().Be(0);
         var page = sut.PageLayoutOf(1);
         page.OffsetX.Should().Be((1000 - 306) / 2.0);
+        page.OffsetY.Should().Be(Gap, "a short document starts at the top, as a scrolling list does");
+    }
+
+    [Fact]
+    public void ContentSmallerThanTheViewportStartsAtTheLeftWhenScrollingHorizontally()
+    {
+        var sut = ContinuousLayout.Compute(Pages(1), ScrollOrientation.Horizontal, ZoomMode.Custom, 0.5, 1000, 1000);
+
+        var page = sut.PageLayoutOf(1);
+        page.OffsetX.Should().Be(Gap);
         page.OffsetY.Should().Be((1000 - 396) / 2.0);
     }
 

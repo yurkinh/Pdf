@@ -25,8 +25,9 @@ public readonly record struct PageSize(double Width, double Height);
 
 /// <summary>
 /// Where every page of a document sits in a continuous (scrolling) view. Pages follow each other along the scroll
-/// axis with a gap, centred across it; the content scrolls by (ScrollX, ScrollY) view units and is centred when it
-/// is smaller than the viewport. One scale applies to every page, computed from the largest page so that fit modes
+/// axis with a gap, centred across it; the content scrolls by (ScrollX, ScrollY) view units. Content smaller than
+/// the viewport starts at the leading edge along the scroll axis (the top, or the left when scrolling horizontally),
+/// as a scrolling list does, and is centred across it. One scale applies to every page, computed from the largest page so that fit modes
 /// do not jump between pages of different sizes. Pages are numbered from 1.
 /// </summary>
 public sealed class ContinuousLayout
@@ -83,8 +84,10 @@ public sealed class ContinuousLayout
         MaxScrollY = Math.Max(0, ContentHeight - viewportHeight);
         ScrollX = Math.Clamp(scrollX, 0, MaxScrollX);
         ScrollY = Math.Clamp(scrollY, 0, MaxScrollY);
-        offsetX = Math.Max(0, (viewportWidth - ContentWidth) / 2);
-        offsetY = Math.Max(0, (viewportHeight - ContentHeight) / 2);
+        // Centred across the scroll axis; along it, a short document starts at the top (left).
+        var vertical = orientation == ScrollOrientation.Vertical;
+        offsetX = vertical ? Math.Max(0, (viewportWidth - ContentWidth) / 2) : 0;
+        offsetY = vertical ? 0 : Math.Max(0, (viewportHeight - ContentHeight) / 2);
     }
 
     /// <summary>View units per point, for every page.</summary>
