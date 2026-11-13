@@ -119,6 +119,49 @@ public class PdfViewerViewModelTest
     }
 
     [Fact]
+    public async Task ZoomStaysWithinMinZoomAndMaxZoomOfTheFitWidthScale()
+    {
+        await using var sut = await CreateAsync();
+        sut.SetViewport(306, 1000); // fit width 0.5
+        sut.MinZoom = 1;
+        sut.MaxZoom = 4;
+
+        sut.ZoomAt(100, 0, 0);
+        sut.Layout.Scale.Should().Be(2);
+        sut.ZoomInCommand.CanExecute(null).Should().BeFalse();
+
+        sut.ZoomAt(0.001, 0, 0);
+        sut.Layout.Scale.Should().Be(0.5);
+        sut.ZoomOutCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FitPageStaysReachableBelowMinZoom()
+    {
+        await using var sut = await CreateAsync();
+        sut.SetViewport(1224, 396); // fit width 2, fit page 0.5
+        sut.MinZoom = 1;
+
+        sut.ZoomAt(0.001, 0, 0);
+
+        sut.Layout.Scale.Should().Be(0.5);
+    }
+
+    [Fact]
+    public async Task LoweringMaxZoomZoomsOutAZoomAboveIt()
+    {
+        await using var sut = await CreateAsync();
+        sut.SetViewport(306, 1000); // fit width 0.5
+        sut.ZoomAt(8, 0, 0);
+        sut.Layout.Scale.Should().Be(4);
+
+        sut.MaxZoom = 2;
+
+        sut.CustomScale.Should().Be(1);
+        sut.Layout.Scale.Should().Be(1);
+    }
+
+    [Fact]
     public async Task DocumentsWithoutOptionalContentHaveNoLayers()
     {
         await using var sut = await CreateAsync();

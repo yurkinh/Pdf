@@ -204,16 +204,78 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         }
     }
 
-    /// <summary>The scale used in <see cref="Melville.Pdf.ViewerModel.ZoomMode.Custom"/> mode, clamped to 0.1–16.</summary>
+    /// <summary>
+    /// The scale used in <see cref="Melville.Pdf.ViewerModel.ZoomMode.Custom"/> mode, clamped to 0.1–16 and to
+    /// <see cref="MinZoom"/>–<see cref="MaxZoom"/>.
+    /// </summary>
     public double CustomScale
     {
         get => customScale;
         set
         {
             var anchor = TopLeftAnchor();
-            if (Set(ref customScale, Math.Clamp(value, MinScale, MaxScale)) && ZoomMode == ZoomMode.Custom)
+            if (Set(ref customScale, ClampScale(value)) && ZoomMode == ZoomMode.Custom)
                 UpdateLayout(anchor);
         }
+    }
+
+    private double minZoom, maxZoom = double.PositiveInfinity;
+
+    /// <summary>
+    /// The smallest zoom, as a multiple of the fit-width scale (1 = fit width); 0 (the default) for no limit beyond
+    /// 0.1. Fit page always stays reachable, so pinching never jumps past it.
+    /// </summary>
+    public double MinZoom
+    {
+        get => minZoom;
+        set { if (Set(ref minZoom, Math.Max(0, value))) ReclampCustomScale(); }
+    }
+
+    /// <summary>
+    /// The largest zoom, as a multiple of the fit-width scale (4 = four times fit width); infinity (the default) for
+    /// no limit below 16.
+    /// </summary>
+    public double MaxZoom
+    {
+        get => maxZoom;
+        set { if (Set(ref maxZoom, Math.Max(0, value))) ReclampCustomScale(); }
+    }
+
+    private void ReclampCustomScale()
+    {
+        var clamped = ClampScale(customScale);
+        if (clamped == customScale) return;
+        customScale = clamped;
+        OnPropertyChanged(nameof(CustomScale));
+        if (zoomMode == ZoomMode.Custom) UpdateLayout(TopLeftAnchor());
+    }
+
+    /// <summary>A scale clamped to 0.1–16 and to MinZoom–MaxZoom of the fit-width scale (when the viewport is known).</summary>
+    private double ClampScale(double scale)
+    {
+        double min = MinScale, max = MaxScale;
+        var (fitWidth, fitPage) = FitScales();
+        if (fitWidth > 0)
+        {
+            min = Math.Max(min, Math.Min(minZoom * fitWidth, fitPage));
+            max = Math.Max(min, Math.Min(max, maxZoom * fitWidth));
+        }
+        return Math.Clamp(scale, min, max);
+    }
+
+    // The fit-width and fit-page scales in the current display mode, or zeros before the viewport and page are known.
+    private (double FitWidth, double FitPage) FitScales()
+    {
+        if (viewportWidth <= 0 || viewportHeight <= 0) return (0, 0);
+        if (displayMode == DisplayMode.Continuous)
+        {
+            if (pageSizes.Length == 0) return (0, 0);
+            return (ContinuousLayout.Compute(pageSizes, scrollOrientation, ZoomMode.FitWidth, 1, viewportWidth, viewportHeight).Scale,
+                ContinuousLayout.Compute(pageSizes, scrollOrientation, ZoomMode.FitPage, 1, viewportWidth, viewportHeight).Scale);
+        }
+        if (currentPage is not { } page) return (0, 0);
+        return (PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, ZoomMode.FitWidth, 1).Scale,
+            PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, ZoomMode.FitPage, 1).Scale);
     }
 
     /// <summary>Where to draw the current page in the viewport. Updated by <see cref="SetViewport"/>, zoom and page changes.</summary>
@@ -254,7 +316,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     {
         var page = Math.Clamp(state.Page, pageSelector.MinPage, pageSelector.MaxPage);
         pendingRestore = state with { Page = page };
-        customScale = Math.Clamp(state.Zoom > 0 ? state.Zoom : 1, MinScale, MaxScale);
+        customScale = ClampScale(state.Zoom > 0 ? state.Zoom : 1);
         zoomMode = state.ZoomMode;
         OnPropertyChanged(nameof(CustomScale));
         OnPropertyChanged(nameof(ZoomMode));
@@ -282,7 +344,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
 
     /// <summary>
     /// Zoom by <paramref name="factor"/> keeping the page point under (viewportX, viewportY) in place, as a pinch
-    /// does. Switches to Custom mode; the scale is clamped to 0.1–16.
+    /// does. Switches to Custom mode; the scale is clamped as <see cref="CustomScale"/> is.
     /// </summary>
     public void ZoomAt(double factor, double viewportX, double viewportY)
     {
@@ -290,7 +352,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         {
             if (continuousLayout is not { } strip || factor <= 0) return;
             var (page, x, y) = strip.ToPage(viewportX, viewportY);
-            customScale = Math.Clamp(strip.Scale * factor, MinScale, MaxScale);
+            customScale = ClampScale(strip.Scale * factor);
             zoomMode = ZoomMode.Custom;
             // The point under the finger stays there: anchor it at (viewportX, viewportY) instead of the corner.
             UpdateLayout(new Anchor(page, x, y, viewportX, viewportY));
@@ -300,7 +362,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         }
         if (layout.Scale <= 0 || factor <= 0) return;
         var (pageX, pageY) = layout.ToPage(viewportX, viewportY);
-        var scale = Math.Clamp(layout.Scale * factor, MinScale, MaxScale);
+        var scale = ClampScale(layout.Scale * factor);
         customScale = scale;
         zoomMode = ZoomMode.Custom;
         // Where the page origin must sit for that point to stay under the finger; scroll is minus that offset.
@@ -419,7 +481,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
     }
 
     private bool CanZoom(double factor) =>
-        layout.Scale > 0 && Math.Clamp(layout.Scale * factor, MinScale, MaxScale) != layout.Scale;
+        layout.Scale > 0 && ClampScale(layout.Scale * factor) != layout.Scale;
 
     /// <summary>A page point to keep at a viewport position across a layout change (zoom, resize, mode change).</summary>
     private readonly record struct Anchor(int Page, double PageX, double PageY, double ViewportX = 0, double ViewportY = 0);

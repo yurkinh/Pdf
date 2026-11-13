@@ -134,4 +134,15 @@ public class ContinuousViewModelTest
 
         await sut.WaitUntilAsync(() => AllRendered(sut) && !ReferenceEquals(sut.VisiblePages[0].Rendered!.Content, first));
     }
+
+    [Fact]
+    public async Task ZoomStaysWithinMaxZoomWhenScrolling()
+    {
+        await using var sut = await CreateAsync(); // fit width 1
+        sut.MaxZoom = 3;
+
+        sut.ZoomAt(10, 0, 0);
+
+        sut.CustomScale.Should().Be(3);
+    }
 }
