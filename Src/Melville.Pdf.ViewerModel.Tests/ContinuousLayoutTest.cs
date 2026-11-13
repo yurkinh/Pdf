@@ -97,4 +97,46 @@ public class ContinuousLayoutTest
         sut.PageLayoutOf(2).OffsetX.Should().Be(612 + 2 * Gap);
         sut.ScrollToStartOf(3).X.Should().Be(2 * (612 + Gap));
     }
+
+    [Fact]
+    public void AMarginSurroundsEveryPage()
+    {
+        var margin = new PageInsets(16, 8, 16, 8);
+        var sut = ContinuousLayout.Compute(Pages(3), ScrollOrientation.Vertical, ZoomMode.FitWidth, 1, 644, 400, 0, 0,
+            margin, PageInsets.Zero);
+
+        sut.Scale.Should().Be(1, "(644 - 16 - 16) / 612");
+        sut.PageLayoutOf(1).Should().Be(new PageLayout(1, 16, 8, 612, 792));
+        sut.PageLayoutOf(2).OffsetY.Should().Be(8 + 792 + 16, "one page's bottom margin and the next one's top");
+        sut.ContentHeight.Should().Be(8 + 3 * 792 + 2 * 16 + 8);
+        sut.ScrollToStartOf(2).Y.Should().Be(792 + 16);
+    }
+
+    [Fact]
+    public void AMarginFollowsAHorizontalStrip()
+    {
+        var margin = new PageInsets(16, 8, 16, 8);
+        var sut = ContinuousLayout.Compute(Pages(3), ScrollOrientation.Horizontal, ZoomMode.Custom, 1, 700, 900, 0, 0,
+            margin, PageInsets.Zero);
+
+        sut.PageLayoutOf(2).OffsetX.Should().Be(16 + 612 + 32);
+        sut.PageLayoutOf(2).OffsetY.Should().Be((900 - 808) / 2 + 8, "the strip is centred across");
+    }
+
+    [Fact]
+    public void ACropShowsPartOfEveryPageInPagePoints()
+    {
+        var crop = new PageInsets(50, 100, 50, 100);
+        var sut = ContinuousLayout.Compute(Pages(3), ScrollOrientation.Vertical, ZoomMode.FitWidth, 1, 528, 400, 0, 0,
+            null, crop);
+
+        sut.Scale.Should().Be(1, "(528 - 2 gaps) / the cropped 512");
+        var first = sut.PageLayoutOf(1);
+        first.Should().Be(new PageLayout(1, Gap, Gap, 512, 592, OriginX: 50, OriginY: 100));
+        sut.ToPage(Gap, Gap).Should().Be((1, 50, 100));
+        first.ToPage(Gap + 10, Gap + 20).Should().Be((60, 120));
+        first.ToView(60, 120).Should().Be((Gap + 10, Gap + 20));
+        sut.ScrollFor(2, 50, 100).Should().Be((Gap, Gap + 592 + Gap));
+        first.Uncropped(612, 792).Should().Be(new PageLayout(1, Gap - 50, Gap - 100, 612, 792));
+    }
 }

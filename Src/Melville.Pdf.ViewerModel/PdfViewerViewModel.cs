@@ -241,6 +241,50 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         set { if (Set(ref maxZoom, Math.Max(0, value))) ReclampCustomScale(); }
     }
 
+    private PageInsets? pageMargin;
+    private PageInsets pageCrop;
+
+    /// <summary>
+    /// Space around every page in continuous mode, in view units; two pages are one's bottom and the next one's
+    /// top margin apart (left and right when scrolling horizontally). Null (the default) for an 8-unit gap.
+    /// </summary>
+    public PageInsets? PageMargin
+    {
+        get => pageMargin;
+        set
+        {
+            var anchor = TopLeftAnchor();
+            if (Set(ref pageMargin, value)) UpdateLayout(anchor);
+        }
+    }
+
+    /// <summary>
+    /// What to hide on every side of every page, in PDF points (both modes). Page points (links, text, search,
+    /// <see cref="ViewState"/>) stay those of the whole page.
+    /// </summary>
+    public PageInsets PageCrop
+    {
+        get => pageCrop;
+        set
+        {
+            var anchor = TopLeftAnchor();
+            if (Set(ref pageCrop, value)) UpdateLayout(anchor);
+        }
+    }
+
+    // The continuous layout with the current margin and crop.
+    private ContinuousLayout Strip(ZoomMode mode, double scale, double scrollX = 0, double scrollY = 0) =>
+        ContinuousLayout.Compute(pageSizes, scrollOrientation, mode, scale, viewportWidth, viewportHeight, scrollX, scrollY,
+            pageMargin, pageCrop);
+
+    // The single page layout of the shown page, cropped.
+    private PageLayout SinglePageLayout(RenderedPage<TPage> page, ZoomMode mode, double scrollX = 0, double scrollY = 0)
+    {
+        var size = pageCrop.Crop(new PageSize(page.Width, page.Height));
+        var computed = PageLayout.Compute(viewportWidth, viewportHeight, size.Width, size.Height, mode, customScale, scrollX, scrollY);
+        return pageCrop.IsZero ? computed : computed with { OriginX = pageCrop.Left, OriginY = pageCrop.Top };
+    }
+
     private void ReclampCustomScale()
     {
         var clamped = ClampScale(customScale);
@@ -270,12 +314,10 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         if (displayMode == DisplayMode.Continuous)
         {
             if (pageSizes.Length == 0) return (0, 0);
-            return (ContinuousLayout.Compute(pageSizes, scrollOrientation, ZoomMode.FitWidth, 1, viewportWidth, viewportHeight).Scale,
-                ContinuousLayout.Compute(pageSizes, scrollOrientation, ZoomMode.FitPage, 1, viewportWidth, viewportHeight).Scale);
+            return (Strip(ZoomMode.FitWidth, 1).Scale, Strip(ZoomMode.FitPage, 1).Scale);
         }
         if (currentPage is not { } page) return (0, 0);
-        return (PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, ZoomMode.FitWidth, 1).Scale,
-            PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, ZoomMode.FitPage, 1).Scale);
+        return (SinglePageLayout(page, ZoomMode.FitWidth).Scale, SinglePageLayout(page, ZoomMode.FitPage).Scale);
     }
 
     /// <summary>Where to draw the current page in the viewport. Updated by <see cref="SetViewport"/>, zoom and page changes.</summary>
@@ -304,7 +346,8 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
             }
             var scale = layout.Scale > 0 ? layout.Scale : customScale;
             return new PdfViewState(pageSelector.Page, zoomMode, zoomMode == ZoomMode.Custom ? customScale : scale,
-                layout.Scale > 0 ? layout.ScrollX / layout.Scale : 0, layout.Scale > 0 ? layout.ScrollY / layout.Scale : 0);
+                layout.Scale > 0 ? layout.ScrollX / layout.Scale + layout.OriginX : 0,
+                layout.Scale > 0 ? layout.ScrollY / layout.Scale + layout.OriginY : 0);
         }
     }
 
@@ -516,8 +559,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         int current;
         lock (continuousLock)
         {
-            strip = ContinuousLayout.Compute(pageSizes, scrollOrientation, zoomMode, customScale,
-                viewportWidth, viewportHeight, continuousScrollX, continuousScrollY);
+            strip = Strip(zoomMode, customScale, continuousScrollX, continuousScrollY);
             if (pendingRestore is { } restore)
             {
                 pendingRestore = null;
@@ -661,11 +703,10 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
         if (pendingRestore is { } restore && restore.Page == renderedPageNumber && viewportWidth > 0 && viewportHeight > 0)
         {
             pendingRestore = null;
-            var scale = PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height, zoomMode, customScale).Scale;
-            (scrollX, scrollY) = (restore.PageX * scale, restore.PageY * scale);
+            var scale = SinglePageLayout(page, zoomMode).Scale;
+            (scrollX, scrollY) = ((restore.PageX - pageCrop.Left) * scale, (restore.PageY - pageCrop.Top) * scale);
         }
-        var computed = PageLayout.Compute(viewportWidth, viewportHeight, page.Width, page.Height,
-            zoomMode, customScale, scrollX, scrollY);
+        var computed = SinglePageLayout(page, zoomMode, scrollX, scrollY);
         (scrollX, scrollY) = (computed.ScrollX, computed.ScrollY); // keep the clamped values
         Layout = computed;
     }
@@ -1033,7 +1074,7 @@ public sealed class PdfViewerViewModel<TPage> : INotifyPropertyChanged, IAsyncDi
 
     private bool InView(PageLayout on, PageRect area)
     {
-        double left = on.OffsetX + area.X * on.Scale, top = on.OffsetY + area.Y * on.Scale;
+        var (left, top) = on.ToView(area.X, area.Y);
         return left >= 0 && top >= 0 && left + area.Width * on.Scale <= viewportWidth &&
                top + area.Height * on.Scale <= viewportHeight;
     }

@@ -34,32 +34,49 @@ public sealed class ContinuousLayout
     /// <summary>The gap between pages, and around them, in view units.</summary>
     public const double DefaultGap = 8;
 
-    private readonly IReadOnlyList<PageSize> pages;
+    private readonly IReadOnlyList<PageSize> pages; // cropped sizes
     private readonly double[] start;       // view units from the content edge to each page's leading edge
     private readonly ScrollOrientation orientation;
-    private readonly double gap, maxCross, offsetX, offsetY;
+    private readonly Spacing spacing;
+    private readonly PageInsets crop;
+    private readonly double maxCross, offsetX, offsetY;
 
-    private ContinuousLayout(IReadOnlyList<PageSize> pages, ScrollOrientation orientation, double scale, double gap,
-        double viewportWidth, double viewportHeight, double scrollX, double scrollY)
+    /// <summary>
+    /// Space in view units: before the first page, between pages and after the last along the scroll axis, and
+    /// on either side across it.
+    /// </summary>
+    private readonly record struct Spacing(double EdgeStart, double Between, double EdgeEnd, double CrossStart, double CrossEnd)
+    {
+        public static Spacing FromGap(double gap) => new(gap, gap, gap, gap, gap);
+
+        // A margin around every page: between two pages, one page's trailing margin and the next one's leading.
+        public static Spacing FromMargin(PageInsets m, ScrollOrientation orientation) => orientation == ScrollOrientation.Vertical
+            ? new(m.Top, m.Bottom + m.Top, m.Bottom, m.Left, m.Right)
+            : new(m.Left, m.Right + m.Left, m.Right, m.Top, m.Bottom);
+    }
+
+    private ContinuousLayout(IReadOnlyList<PageSize> pages, ScrollOrientation orientation, double scale, Spacing spacing,
+        PageInsets crop, double viewportWidth, double viewportHeight, double scrollX, double scrollY)
     {
         this.pages = pages;
         this.orientation = orientation;
-        this.gap = gap;
+        this.spacing = spacing;
+        this.crop = crop;
         Scale = scale;
         ViewportWidth = viewportWidth;
         ViewportHeight = viewportHeight;
 
         start = new double[pages.Count + 1];
-        double main = gap, cross = 0;
+        double main = spacing.EdgeStart, cross = 0;
         for (int i = 0; i < pages.Count; i++)
         {
             start[i] = main;
-            main += Along(pages[i]) * scale + gap;
+            main += Along(pages[i]) * scale + (i < pages.Count - 1 ? spacing.Between : spacing.EdgeEnd);
             cross = Math.Max(cross, Across(pages[i]) * scale);
         }
         start[pages.Count] = main;
         maxCross = cross;
-        var crossExtent = cross + 2 * gap;
+        var crossExtent = cross + spacing.CrossStart + spacing.CrossEnd;
         (ContentWidth, ContentHeight) = orientation == ScrollOrientation.Vertical ? (crossExtent, main) : (main, crossExtent);
 
         MaxScrollX = Math.Max(0, ContentWidth - viewportWidth);
@@ -106,36 +123,58 @@ public sealed class ContinuousLayout
     /// </summary>
     public static ContinuousLayout Compute(IReadOnlyList<PageSize> pages, ScrollOrientation orientation, ZoomMode mode,
         double customScale, double viewportWidth, double viewportHeight, double scrollX = 0, double scrollY = 0,
-        double gap = DefaultGap)
+        double gap = DefaultGap) =>
+        Compute(pages, orientation, mode, customScale, viewportWidth, viewportHeight, scrollX, scrollY,
+            Spacing.FromGap(gap), PageInsets.Zero);
+
+    /// <summary>
+    /// Lay out <paramref name="pages"/> with <paramref name="margin"/> around every page (view units; two pages
+    /// are one's trailing and the next one's leading margin apart; null for <see cref="DefaultGap"/> between and
+    /// around pages) and <paramref name="crop"/> taken off every
+    /// page (PDF points). Page points stay those of the whole page: <see cref="ToPage"/>, <see cref="ScrollFor"/>
+    /// and the <see cref="PageLayout.OriginX"/> of <see cref="PageLayoutOf"/> account for the crop.
+    /// </summary>
+    public static ContinuousLayout Compute(IReadOnlyList<PageSize> pages, ScrollOrientation orientation, ZoomMode mode,
+        double customScale, double viewportWidth, double viewportHeight, double scrollX, double scrollY,
+        PageInsets? margin, PageInsets crop) =>
+        Compute(pages, orientation, mode, customScale, viewportWidth, viewportHeight, scrollX, scrollY,
+            margin is { } m ? Spacing.FromMargin(m, orientation) : Spacing.FromGap(DefaultGap), crop);
+
+    private static ContinuousLayout Compute(IReadOnlyList<PageSize> pages, ScrollOrientation orientation, ZoomMode mode,
+        double customScale, double viewportWidth, double viewportHeight, double scrollX, double scrollY,
+        Spacing spacing, PageInsets crop)
     {
+        var shown = crop.IsZero ? pages : pages.Select(crop.Crop).ToArray();
         double maxWidth = 0, maxHeight = 0;
-        foreach (var page in pages)
+        foreach (var page in shown)
         {
             maxWidth = Math.Max(maxWidth, page.Width);
             maxHeight = Math.Max(maxHeight, page.Height);
         }
-        var scale = ScaleFor(mode, customScale, maxWidth, maxHeight, viewportWidth, viewportHeight, gap);
-        return new ContinuousLayout(pages, orientation, scale, gap, viewportWidth, viewportHeight, scrollX, scrollY);
+        var scale = ScaleFor(mode, customScale, maxWidth, maxHeight, viewportWidth, viewportHeight, spacing, orientation);
+        return new ContinuousLayout(shown, orientation, scale, spacing, crop, viewportWidth, viewportHeight, scrollX, scrollY);
     }
 
     private static double ScaleFor(ZoomMode mode, double customScale, double maxWidth, double maxHeight,
-        double viewportWidth, double viewportHeight, double gap)
+        double viewportWidth, double viewportHeight, Spacing spacing, ScrollOrientation orientation)
     {
         if (mode == ZoomMode.Custom || maxWidth <= 0 || maxHeight <= 0) return customScale;
-        double width = Math.Max(1, viewportWidth - 2 * gap), height = Math.Max(1, viewportHeight - 2 * gap);
+        double along = spacing.EdgeStart + spacing.EdgeEnd, across = spacing.CrossStart + spacing.CrossEnd;
+        var (horizontal, vertical) = orientation == ScrollOrientation.Vertical ? (across, along) : (along, across);
+        double width = Math.Max(1, viewportWidth - horizontal), height = Math.Max(1, viewportHeight - vertical);
         return mode == ZoomMode.FitWidth ? width / maxWidth : Math.Min(width / maxWidth, height / maxHeight);
     }
 
     /// <summary>The same layout at another scroll position (clamped).</summary>
     public ContinuousLayout ScrolledTo(double scrollX, double scrollY) =>
-        new(pages, orientation, Scale, gap, ViewportWidth, ViewportHeight, scrollX, scrollY);
+        new(pages, orientation, Scale, spacing, crop, ViewportWidth, ViewportHeight, scrollX, scrollY);
 
     /// <summary>Where page <paramref name="page"/> is drawn in the viewport.</summary>
     public PageLayout PageLayoutOf(int page)
     {
         var size = pages[page - 1];
         var (x, y) = Origin(page);
-        return new PageLayout(Scale, x, y, size.Width * Scale, size.Height * Scale);
+        return new PageLayout(Scale, x, y, size.Width * Scale, size.Height * Scale, OriginX: crop.Left, OriginY: crop.Top);
     }
 
     /// <summary>
@@ -150,11 +189,11 @@ public sealed class ContinuousLayout
         while (low < high)
         {
             var middle = (low + high + 1) / 2;
-            if (start[middle] - gap / 2 <= along) low = middle; else high = middle - 1;
+            if (start[middle] - spacing.Between / 2 <= along) low = middle; else high = middle - 1;
         }
         var page = low + 1;
         var (x, y) = Origin(page);
-        return (page, (viewportX - x) / Scale, (viewportY - y) / Scale);
+        return (page, (viewportX - x) / Scale + crop.Left, (viewportY - y) / Scale + crop.Top);
     }
 
     /// <summary>The page at the viewport's centre: the "current" page while scrolling.</summary>
@@ -183,19 +222,19 @@ public sealed class ContinuousLayout
     public (double X, double Y) ScrollFor(int page, double pageX, double pageY)
     {
         var (x, y) = ContentOrigin(page);
-        return (x + pageX * Scale, y + pageY * Scale);
+        return (x + (pageX - crop.Left) * Scale, y + (pageY - crop.Top) * Scale);
     }
 
-    /// <summary>The scroll position that shows <paramref name="page"/> from its leading edge (less the gap).</summary>
+    /// <summary>The scroll position that shows <paramref name="page"/> from its leading edge (less its margin).</summary>
     public (double X, double Y) ScrollToStartOf(int page) => orientation == ScrollOrientation.Vertical
-        ? (ScrollX, start[page - 1] - gap)
-        : (start[page - 1] - gap, ScrollY);
+        ? (ScrollX, start[page - 1] - spacing.EdgeStart)
+        : (start[page - 1] - spacing.EdgeStart, ScrollY);
 
     // Top-left corner of a page in content coordinates (before scrolling and centring).
     private (double X, double Y) ContentOrigin(int page)
     {
         var size = pages[page - 1];
-        var across = gap + (maxCross - Across(size) * Scale) / 2;
+        var across = spacing.CrossStart + (maxCross - Across(size) * Scale) / 2;
         return orientation == ScrollOrientation.Vertical ? (across, start[page - 1]) : (start[page - 1], across);
     }
 

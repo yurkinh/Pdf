@@ -1,7 +1,10 @@
-﻿using Melville.Pdf.LowLevel.Model.Conventions;
+﻿using System;
+using System.Linq;
+using Melville.Pdf.LowLevel.Model.Conventions;
 using Melville.Pdf.LowLevel.Model.Objects;
 using Melville.Pdf.Model.Documents;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Text;
+using Melville.Postscript.Interpreter.Values;
 
 namespace Melville.Pdf.Model.Renderers.FontRenderings.DefaultFonts;
 
@@ -39,6 +42,44 @@ public static class SubstituteDefaultFont
     /// <returns>A PdfName corresponding to a built in font.</returns>
     public static PdfDirectObject MapBuiltInFont(this FontFlags flags) => 
       names[FamilyOffset(flags) + BoldOffset(flags) + ItalicOffset(flags)];
+
+    /// <summary>
+    /// Guess the built in font that resembles a font from its name, such as "Times New Roman,Bold" or
+    /// "ABCDEE+Arial-ItalicMT": the family from well known family names, bold and italic from the style words in the
+    /// name or from <paramref name="flags"/>. Null when the name gives no family away.
+    /// </summary>
+    /// <param name="font">The font's name (BaseFont).</param>
+    /// <param name="flags">Fontflags of the font, for bold and italic the name does not mention.</param>
+    /// <returns>A PdfName corresponding to a built in font, or null.</returns>
+    public static PdfDirectObject? MapFontName(PdfDirectObject font, FontFlags flags)
+    {
+        if (!font.IsName) return null;
+        var text = Encoding.Latin1.GetString(font.Get<StringSpanSource>().GetSpan());
+        if (text.Length > 7 && text[6] == '+') text = text[7..]; // a subset prefix, such as ABCDEE+
+        var key = new string(text.Where(char.IsLetter).Select(char.ToLowerInvariant).ToArray());
+        if (key.Length == 0) return null;
+        if (ContainsAny(key, "dingbat", "wingding", "webding")) return KnownNames.ZapfDingbats;
+        if (ContainsAny(key, "symbol")) return KnownNames.Symbol;
+        int family;
+        if (ContainsAny(key, "courier", "mono", "consola", "typewriter", "menlo", "fixed")) family = 0;
+        else if (ContainsAny(key, "sans", "arial", "helvetica", "calibri", "segoe", "verdana", "tahoma", "roboto",
+                     "gothic", "grotesk", "avenir", "futura", "frutiger", "myriad", "lucida", "trebuchet", "candara",
+                     "corbel", "ubuntu", "opensans", "noto", "inter", "lato", "geneva")) family = 4;
+        else if (ContainsAny(key, "times", "serif", "georgia", "garamond", "cambria", "palatino", "bookman", "antiqua",
+                     "century", "minion", "libertine", "baskerville", "didot", "bodoni", "caslon", "constantia",
+                     "charter", "roman")) family = 8;
+        else return null;
+        var bold = ContainsAny(key, "bold", "black", "heavy", "semibold", "demi") || flags.HasFlag(FontFlags.ForceBold);
+        var italic = ContainsAny(key, "italic", "oblique") || flags.HasFlag(FontFlags.Italic);
+        return names[family + (bold ? 1 : 0) + (italic ? 2 : 0)];
+    }
+
+    private static bool ContainsAny(string key, params ReadOnlySpan<string> words)
+    {
+        foreach (var word in words)
+            if (key.Contains(word, StringComparison.Ordinal)) return true;
+        return false;
+    }
 
     private static int FamilyOffset(FontFlags flags)
     {

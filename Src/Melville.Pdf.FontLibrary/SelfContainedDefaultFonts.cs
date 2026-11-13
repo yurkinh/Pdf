@@ -37,7 +37,7 @@ public partial class SelfContainedDefaultFonts: IDefaultFontMapper
             var x when x.Equals(KnownNames.TimesBoldItalic) => SystemFontAsync("LinLibertine_RBI.otf"),
             var x when x.Equals(KnownNames.Symbol) => SystemFontAsync("Symbola.ttf"), 
             var x when x.Equals(KnownNames.ZapfDingbats) => SystemFontAsync("Symbola.ttf"),
-            _ => FontFromNameAsync(fontFlags.MapBuiltInFont(), fontFlags)
+            _ => FontFromNameAsync(SubstituteDefaultFont.MapFontName(font, fontFlags) ?? fontFlags.MapBuiltInFont(), fontFlags)
         };
     }
 

@@ -18,11 +18,13 @@ public enum ZoomMode
 /// <summary>
 /// Where a page sits in the viewport: draw the page with Scale, offset by (OffsetX, OffsetY).
 /// ContentWidth and ContentHeight are the scaled page size; ScrollX/ScrollY are how far a page larger than
-/// the viewport is scrolled, between 0 and MaxScrollX/MaxScrollY.
+/// the viewport is scrolled, between 0 and MaxScrollX/MaxScrollY. A cropped page shows only part of the page:
+/// (OriginX, OriginY) is the page point at the content's top-left corner, and the content is the cropped size.
 /// </summary>
 public readonly record struct PageLayout(
     double Scale, double OffsetX, double OffsetY, double ContentWidth, double ContentHeight,
-    double ScrollX = 0, double ScrollY = 0, double MaxScrollX = 0, double MaxScrollY = 0)
+    double ScrollX = 0, double ScrollY = 0, double MaxScrollX = 0, double MaxScrollY = 0,
+    double OriginX = 0, double OriginY = 0)
 {
     /// <summary>
     /// Lay a page out in a viewport. A page smaller than the viewport is centred on that axis; a larger one is
@@ -54,5 +56,19 @@ public readonly record struct PageLayout(
 
     /// <summary>The point on the page (in PDF points) under a viewport point.</summary>
     public (double X, double Y) ToPage(double viewportX, double viewportY) =>
-        Scale <= 0 ? (0, 0) : ((viewportX - OffsetX) / Scale, (viewportY - OffsetY) / Scale);
+        Scale <= 0 ? (0, 0) : ((viewportX - OffsetX) / Scale + OriginX, (viewportY - OffsetY) / Scale + OriginY);
+
+    /// <summary>The viewport point of a page point.</summary>
+    public (double X, double Y) ToView(double pageX, double pageY) =>
+        (OffsetX + (pageX - OriginX) * Scale, OffsetY + (pageY - OriginY) * Scale);
+
+    /// <summary>
+    /// The whole page of a cropped layout, at the same place: draw the page and anything in page points with it,
+    /// clipped to this layout's content. The same layout when nothing is cropped.
+    /// </summary>
+    public PageLayout Uncropped(double pageWidth, double pageHeight) => OriginX == 0 && OriginY == 0 ? this : this with
+    {
+        OffsetX = OffsetX - OriginX * Scale, OffsetY = OffsetY - OriginY * Scale,
+        ContentWidth = pageWidth * Scale, ContentHeight = pageHeight * Scale, OriginX = 0, OriginY = 0,
+    };
 }

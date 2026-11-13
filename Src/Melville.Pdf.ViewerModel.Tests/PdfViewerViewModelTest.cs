@@ -162,6 +162,22 @@ public class PdfViewerViewModelTest
     }
 
     [Fact]
+    public async Task ACropShowsPartOfThePageKeepingPagePoints()
+    {
+        await using var sut = await CreateAsync();
+        sut.PageCrop = new PageInsets(50, 100, 50, 100); // 512 x 592 left
+        sut.SetViewport(512, 592);
+
+        sut.Layout.Should().Be(new PageLayout(1, 0, 0, 512, 592, OriginX: 50, OriginY: 100));
+        sut.Layout.ToPage(0, 0).Should().Be((50, 100));
+        sut.ViewState.Should().Be(new PdfViewState(1, ZoomMode.FitPage, 1, 50, 100));
+
+        sut.Restore(new PdfViewState(1, ZoomMode.Custom, 2, 150, 300));
+        sut.Layout.ToPage(0, 0).Should().Be((150, 300));
+        sut.ViewState.Should().Be(new PdfViewState(1, ZoomMode.Custom, 2, 150, 300));
+    }
+
+    [Fact]
     public async Task DocumentsWithoutOptionalContentHaveNoLayers()
     {
         await using var sut = await CreateAsync();
